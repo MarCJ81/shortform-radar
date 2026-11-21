@@ -485,7 +485,7 @@
   }
 
   /* ---------- board ---------- */
-  const COL_COLORS = { saved: '#94a3b8', scripting: '#f59e0b', shooting: '#3b82f6', done: '#16a34a' };
+  const COL_COLORS = { saved: '#C4C8CE', scripting: '#8A8F96', shooting: '#2F5BFF', done: '#0E9F6E' };
 
   function renderBoard() {
     const items = allItems();
@@ -1084,7 +1084,7 @@
         '<div><label class="flabel" for="ytMax">개수</label><select class="input" id="ytMax"><option value="10">10건</option><option value="25" selected>25건</option><option value="50">50건</option></select></div>' +
         '</div>' +
         '<p class="form-note">최신순·조회수순 쇼츠를 검색한 뒤, 채널 평균과 비교해 배수를 계산합니다. 호출은 검색 1회 + 상세 2회입니다. 오늘 검색 ' + qty.search + '/' + C.QUOTA.searchPerDay + '회 사용.</p>' +
-        '<div id="ytError" class="form-note" style="color:#dc2626;margin-top:8px" role="alert"></div>' +
+        '<div id="ytError" class="form-note" style="color:var(--danger);margin-top:8px" role="alert"></div>' +
         '<div class="form-row" style="margin-top:12px"><button class="btn btn-primary" type="submit" style="flex:0 0 auto">실시간 수집</button>' +
         '<button class="btn btn-ghost" type="button" data-action="close-modal" style="flex:0 0 auto">닫기</button></div>' +
         '</form>';
