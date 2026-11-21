@@ -151,7 +151,7 @@ https://www.youtube.com/shorts/dQw4w9WgXcQ,youtube,@sample.creator,540000,29200,
 
 ```bash
 node test.js          # 코어·엔진 로직 단위 테스트 333개
-python3 uitest.py     # 실제 Chrome 데스크톱(1440×900)·모바일(390×844) 검증 193개
+python3 uitest.py     # 실제 Chrome 데스크톱(1440×900)·모바일(390×844) 검증 197개
 ```
 
 - `test.js`는 `core.js`(DOM 없는 순수 로직) · `data.js` · `engines/copy-psych-engine.js`를 그대로 불러 검증합니다. Node가 없는 환경에서는 Playwright에 번들된 런타임으로도 실행됩니다:
