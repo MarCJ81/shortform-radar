@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>떡상 레이더 — 숏폼 바이럴 수집기 &amp; 벤치마킹 보드</title>
-<meta name="description" content="인스타 릴스·유튜브 쇼츠·틱톡의 떡상 영상을 채널 평균 대비 배수로 찾고, 훅 분석과 대본 템플릿까지 한 화면에서. 서버 없이 브라우저에만 저장됩니다." />
+<meta name="description" content="인스타 릴스·유튜브 쇼츠·틱톡의 떡상 영상을 채널 평균 대비 배수로 찾고, 훅 분석·8대 카피 심리 진단·PAS/BAB/AIDA/4U 리라이팅과 ChatGPT·Claude·Gemini 30초 대본 브리지까지 한 화면에서. 서버 없이 브라우저에만 저장됩니다." />
 <meta name="theme-color" content="#ffffff" />
 <meta name="color-scheme" content="light dark" />
 <link rel="icon" href="favicon.svg" type="image/svg+xml" />
@@ -152,7 +152,7 @@
     <div class="view-head">
       <div class="view-title">
         <h1>AI 훅·대본 분석</h1>
-        <p class="sub">모은 영상의 첫 3초 훅 유형을 갈라 보면, 이 카테고리에서 뭐가 먹히는지 보입니다. 그대로 쓰는 대본 템플릿도 같이 만듭니다.</p>
+        <p class="sub">모은 영상의 첫 3초 훅 유형을 갈라 보면, 이 카테고리에서 뭐가 먹히는지 보입니다. 8대 심리 트리거 진단·PAS/BAB/AIDA/4U 리라이팅과 내 구독 AI 30초 대본 브리지까지 같이 만듭니다.</p>
       </div>
       <div class="summary" id="aiSummary"></div>
     </div>
@@ -167,19 +167,24 @@
       </div>
     </div>
     <div class="panel studio" id="studio"></div>
+    <div class="panel psy-panel" id="psychPanel"></div>
+    <div class="panel bridge-panel" id="bridgePanel"></div>
   </section>
 </main>
 
 <footer class="footer">
   <div class="footer-inner">
     <p><strong>떡상 레이더</strong> · 서버 없음 · 외부 트래커 0건 · 모든 데이터는 이 브라우저(localStorage)에만 저장됩니다.</p>
-    <p class="muted">YouTube API 키는 이 브라우저에만 저장되며 어디로도 전송되지 않습니다. 데모 수치는 시뮬레이션 데이터입니다.</p>
+    <p class="muted">YouTube API·Gemini API 키는 이 브라우저에만 저장되며 서버로 전송되지 않습니다. AI 버튼은 누를 때만 해당 서비스 창을 엽니다. 데모 수치는 시뮬레이션 데이터입니다.</p>
+    <p class="muted footer-links"><a href="privacy.html">개인정보 처리방침</a></p>
   </div>
 </footer>
 
 <div class="modal-root" id="modalRoot" hidden></div>
 <div class="toast-root" id="toastRoot" aria-live="polite"></div>
 
+<script src="engines/copy-psych-engine.js"></script>
+<script src="engines/ai-bridge.js"></script>
 <script src="core.js"></script>
 <script src="data.js"></script>
 <script src="app.js"></script>

@@ -7,6 +7,7 @@
 
   const C = window.RadarCore;
   const D = window.RadarData;
+  const B = window.AiBridge || null;     // engines/ai-bridge.js (카피 심리학 엔진은 core.js가 감싼다)
   const $ = (sel, root) => (root || document).querySelector(sel);
   const $$ = (sel, root) => Array.prototype.slice.call((root || document).querySelectorAll(sel));
 
@@ -17,6 +18,9 @@
     board: 'radar.v1.board',
     watch: 'radar.v1.watchlist',
     quota: 'radar.v1.quota',
+    aiScripts: 'radar.v1.aiScripts',
+    geminiKey: 'radar.v1.geminiKey',
+    geminiModel: 'radar.v1.geminiModel',
   };
 
   /* ---------- storage ---------- */
@@ -41,6 +45,11 @@
     watchlist: store.get(KEY.watch, []) || [],
     apiKey: store.get(KEY.apiKey, '') || '',
     quota: store.get(KEY.quota, null),
+    aiScripts: store.get(KEY.aiScripts, {}) || {},
+    geminiKey: store.get(KEY.geminiKey, '') || '',
+    geminiModel: store.get(KEY.geminiModel, '') || '',
+    geminiBusy: false,
+    drafts: {},
     theme: store.get(KEY.theme, 'light') === 'dark' ? 'dark' : 'light',
     filters: { platform: 'all', country: 'all', minMultiple: 0, period: 0, category: 'all', collectedOnly: false },
     query: '',
@@ -168,10 +177,14 @@
     '기타': 'default',
   };
 
+  /* 같은 카드가 레이더 뷰·커머스 뷰에 동시에 그려져도 SVG gradient id가 겹치지 않도록
+     인스턴스마다 일련번호를 붙인다(중복 id → fill="url(#..)"가 먼저 정의된 쪽을 참조하는 문제). */
+  let coverSeq = 0;
+
   function coverSVG(item) {
     const cover = item.cover || {};
     const pal = D.PALETTES[cover.palette] || D.PALETTES.slate;
-    const uid = 'cg' + String(item.id).replace(/[^a-zA-Z0-9_-]/g, '');
+    const uid = 'cg' + String(item.id).replace(/[^a-zA-Z0-9_-]/g, '') + 'n' + (++coverSeq);
     const motif = MOTIFS[cover.motif] || MOTIFS[MOTIF_BY_CATEGORY[item.category]] || MOTIFS.default;
     const lines = (cover.text && cover.text.length ? cover.text : C.coverLines(item.caption || '레퍼런스')).slice(0, 2);
     const longest = Math.max.apply(null, lines.map((l) => String(l).length));
@@ -563,6 +576,292 @@
       '<div><pre class="script-out" id="studioScript">' + esc(script) + '</pre>' +
       '<details style="margin-top:8px"><summary class="muted" style="font-size:11.5px;cursor:pointer">프롬프트 미리보기</summary><pre class="script-out" id="studioPrompt" style="margin-top:6px;font-size:11px">' + esc(prompt) + '</pre></details>' +
       '</div></div>';
+
+    const psych = $('#psychPanel');
+    if (psych) {
+      const refTitle = item ? C.itemTitle(item) : '';
+      psych.innerHTML = '<div class="panel-head"><h2>카피 심리학 · 내 버전 리라이팅</h2><span class="muted">' +
+        (item ? '레퍼런스 · ' + esc(refTitle.slice(0, 16)) + (refTitle.length > 16 ? '…' : '') : '레퍼런스 없음') + '</span></div>' +
+        (item ? psychPanelHTML(item, 'a')
+          : '<p class="muted">레퍼런스를 하나 고르면 8대 트리거 진단과 PAS·BAB·AIDA·4U 리라이팅을 만듭니다.</p>');
+    }
+
+    const bridge = $('#bridgePanel');
+    if (bridge) {
+      bridge.innerHTML = '<div class="panel-head"><h2>내 구독 AI로 30초 대본</h2><span class="muted">ChatGPT · Claude · Gemini</span></div>' +
+        (item ? bridgeHTML(item, 'a')
+          : '<p class="muted">레퍼런스를 고르면 프롬프트가 만들어집니다.</p>');
+    }
+  }
+
+  /* ---------- 카피 심리학 (engines/copy-psych-engine.js) ---------- */
+
+  function stamp(iso) {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    const p = (n) => String(n).padStart(2, '0');
+    return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+
+  function psyField(key, label, value, placeholder) {
+    return '<label class="psy-field"><span>' + esc(label) + '</span>' +
+      '<input class="input" type="text" data-psy="' + esc(key) + '" value="' + esc(value) + '" placeholder="' + esc(placeholder || '') + '" autocomplete="off" spellcheck="false" /></label>';
+  }
+
+  /** 화면을 다시 그려도 방금 친 문장(내 제품·AI 답변)을 잃지 않게 하는 임시 보관함 (저장 안 됨) */
+  function draftFor(prefix, id) {
+    const k = (prefix || 'm') + ':' + id;
+    state.drafts[k] = state.drafts[k] || {};
+    return state.drafts[k];
+  }
+
+  function psyBar(t) {
+    const lvl = t.score >= 70 ? ' strong' : t.score >= 40 ? ' ok' : ' weak';
+    return '<div class="psy-bar' + lvl + '" title="' + esc(t.claim || '') + '">' +
+      '<span class="pb-name">' + esc(t.name) + '</span>' +
+      '<span class="pb-track"><i style="width:' + Math.max(2, t.score) + '%"></i></span>' +
+      '<span class="pb-val">' + t.score + '</span></div>';
+  }
+
+  /** 패널 안의 입력값(사용자가 고친 문장) 읽기 */
+  function psyOverrides(prefix) {
+    const root = document.getElementById('psy-' + (prefix || 'm'));
+    if (!root) return {};
+    const out = {};
+    ['product', 'target', 'problem', 'solution', 'proof', 'cta'].forEach((k) => {
+      const el = root.querySelector('[data-psy="' + k + '"]');
+      if (el) out[k] = el.value.trim();
+    });
+    return out;
+  }
+
+  function psyOutHTML(item, fwId, prefix) {
+    const r = C.psychFramework(item, fwId, psyOverrides(prefix));
+    if (!r.ok) return '<p class="muted">문장을 만들지 못했습니다.</p>';
+    const fw = r.fw;
+    return '<div class="psy-fw">' + esc(fw.id) + ' · ' + esc(fw.name) + '</div>' +
+      '<p class="psy-fw-title">' + esc(fw.title) + '</p>' +
+      fw.sections.map((s) => '<div class="psy-sec"><span class="psy-sec-label">' + esc(s.label) + '</span><p>' + esc(s.text) + '</p></div>').join('') +
+      '<div class="psy-fw-meta">초안 진단 <b>' + fw.psych.total + '점</b> · 트리거 <b>' + fw.coverage + '/8</b>' +
+      (fw.coverage < 6 ? ' · 근거 숫자를 넣으면 올라갑니다' : '') + '</div>';
+  }
+
+  function updatePsyOut(prefix) {
+    const p = prefix || 'm';
+    const root = document.getElementById('psy-' + p);
+    const out = document.getElementById('psyOut-' + p);
+    if (!root || !out) return;
+    const item = findItem(root.dataset.item);
+    if (!item) return;
+    out.innerHTML = psyOutHTML(item, root.dataset.fw || 'PAS', p);
+  }
+
+  const psyInputDebounced = debounce((prefix) => updatePsyOut(prefix), 160);
+  const aiMetaDebounced = debounce((prefix, text) => {
+    const meta = document.getElementById('aiMeta-' + prefix);
+    if (meta) meta.innerHTML = scriptMetaHTML(text);
+  }, 160);
+
+  const PSY_FW_NAME = { PAS: '문제-자극-해결', BAB: '이전-이후-다리', AIDA: '주의-흥미-욕구-행동', '4U': '유용-긴급-독특-구체' };
+
+  function psychPanelHTML(item, prefix) {
+    const p = prefix || 'm';
+    const prof = C.psychProfile(item);
+    if (!prof.ok) {
+      return '<div class="psy psy-missing">카피 심리학 엔진을 불러오지 못했습니다. <b>engines/copy-psych-engine.js</b>를 확인하세요.</div>';
+    }
+    const input = C.psychInputFor(item, {});
+    const rw = C.psychRewrite(item, {});
+    const bestId = rw.ok && rw.best ? rw.best.id : 'PAS';
+    const bestCoverage = rw.ok && rw.best ? rw.best.coverage : 0;
+    const draft = state.drafts[p + ':' + item.id] || {};
+    const dv = (k) => (typeof draft[k] === 'string' ? draft[k] : input[k]);
+    const topTrigger = prof.triggers.slice().sort((a, b) => b.score - a.score)[0];
+    const headline = prof.strongCount
+      ? prof.strongCount + '개 축을 70점 이상으로 씀'
+      : (topTrigger && topTrigger.score > 0 ? '가장 강한 축: ' + topTrigger.name + ' ' + topTrigger.score + '점' : '아직 쓰인 트리거가 없습니다');
+    const gaps = prof.gaps.length
+      ? '<ul class="psy-gaps">' + prof.gaps.slice(0, 3).map((g) => (
+        '<li><b>' + esc(g.name) + '</b><span class="psy-gscore">' + g.score + '점</span><p>' + esc(g.action) + '</p></li>'
+      )).join('') + '</ul>'
+      : '<p class="form-note">8개 트리거가 모두 70점 이상입니다. 그대로 써도 됩니다.</p>';
+
+    return '<div class="psy" id="psy-' + p + '" data-item="' + esc(item.id) + '" data-fw="' + esc(bestId) + '">' +
+      '<div class="psy-head">' +
+        '<div class="psy-score"><b>' + prof.coverage + '<i>/8</i></b><span>트리거 커버리지</span></div>' +
+        '<div class="psy-headline">' +
+          '<b>' + esc(headline) + '</b>' +
+          '<span>' + prof.chars + '자 진단 · 종합 ' + prof.total + '점' + (prof.grade ? ' (' + esc(prof.grade.id) + ')' : '') + '</span>' +
+          '<span class="psy-note">수집한 제목·훅·해시태그·CTA만 채점합니다. 영상 성과와는 별개입니다.</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="psy-bars">' + prof.triggers.map(psyBar).join('') + '</div>' +
+      gaps +
+      '<div class="psy-rewrite">' +
+        '<div class="psy-rtitle">내 버전 리라이팅 <span>레퍼런스 ' + prof.coverage + '/8 → 초안 ' + bestCoverage + '/8</span></div>' +
+        '<div class="psy-grid2">' +
+          psyField('product', '내 제품·주제', dv('product')) +
+          psyField('target', '타깃', dv('target')) +
+        '</div>' +
+        '<details class="psy-more"><summary>문장 초안 고치기 (문제·해결·근거·CTA)</summary>' +
+          '<div class="psy-grid2">' + psyField('problem', '문제', dv('problem')) + psyField('solution', '해결', dv('solution')) + '</div>' +
+          '<div class="psy-grid2">' + psyField('proof', '내 근거 숫자 (선택)', dv('proof'), '예: 4주 실측 62명, 재구매 68%') + psyField('cta', 'CTA', dv('cta')) + '</div>' +
+        '</details>' +
+        '<div class="psy-tabs">' + ['PAS', 'BAB', 'AIDA', '4U'].map((id) => (
+          '<button type="button" class="psy-tab' + (id === bestId ? ' is-on' : '') + '" data-action="psy-fw" data-fw="' + id + '" data-prefix="' + p + '" title="' + esc(PSY_FW_NAME[id]) + '">' + id + '</button>'
+        )).join('') + '</div>' +
+        '<div class="psy-out" id="psyOut-' + p + '">' + psyOutHTML(item, bestId, p) + '</div>' +
+        '<div class="studio-actions">' +
+          '<button class="btn btn-ghost btn-sm" type="button" data-action="copy-psy" data-prefix="' + p + '">' + icon('copy', 12) + ' 이 문구 복사</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  /* ---------- 내 구독 AI 원클릭 브리지 (engines/ai-bridge.js) ---------- */
+
+  function scriptMetaHTML(text) {
+    if (!text || !String(text).trim()) {
+      return '<span class="muted" style="font-size:11px">붙여넣으면 0~3초 같은 구간과 글자수를 확인합니다.</span>';
+    }
+    const meta = C.scriptMeta(text);
+    const chips = [
+      '<span class="ai-chip' + (meta.beats.length >= 4 ? ' ok' : ' warn') + '">비트 ' + meta.beats.length + '개</span>',
+      '<span class="ai-chip">' + meta.chars + '자</span>',
+      meta.hasCta ? '<span class="ai-chip ok">CTA 있음</span>' : '<span class="ai-chip warn">CTA 없음</span>',
+    ];
+    return '<div class="ai-chips">' + chips.join('') + '</div>' +
+      (meta.warnings.length ? '<ul class="ai-warn">' + meta.warnings.slice(0, 2).map((w) => '<li>' + esc(w) + '</li>').join('') + '</ul>' : '');
+  }
+
+  function bridgeHTML(item, prefix) {
+    const p = prefix || 'm';
+    if (!B) {
+      return '<div class="bridge psy-missing">AI 브리지를 불러오지 못했습니다. <b>engines/ai-bridge.js</b>를 확인하세요.</div>';
+    }
+    const prompt = C.buildBridgePrompt(item, psyOverrides(p));
+    const links = B.linksFor(prompt);
+    const saved = state.aiScripts[item.id];
+    const draft = state.drafts[p + ':' + item.id] || {};
+    const aiValue = typeof draft.ai === 'string' ? draft.ai : (saved ? saved.text : '');
+    const model = state.geminiModel || B.GEMINI_DEFAULT_MODEL;
+    const models = B.GEMINI_MODELS.indexOf(model) === -1 ? [model].concat(B.GEMINI_MODELS) : B.GEMINI_MODELS;
+
+    return '<div class="bridge" id="bridge-' + p + '" data-item="' + esc(item.id) + '">' +
+      '<div class="bridge-btns">' + links.map((l) => (
+        '<button type="button" class="btn btn-ghost btn-sm bridge-btn" data-action="bridge-open" data-provider="' + esc(l.id) + '" data-prefix="' + p + '" data-id="' + esc(item.id) + '" title="' + esc(l.note) + '">' +
+        esc(l.label) + ' 열기<span class="b-tag' + (l.prefilled ? '' : ' paste') + '">' + (l.prefilled ? '자동 입력' : '붙여넣기') + '</span></button>'
+      )).join('') + '</div>' +
+      '<p class="form-note">제목·조회수·바이럴 배수·훅 분해·심리 진단을 묶은 프롬프트 <b>' + C.countChars(prompt) + '자</b>. 버튼을 누르면 클립보드에 복사하고 새 창을 엽니다. ChatGPT·Claude는 입력창에 채워지고, Gemini는 열린 창에 붙여넣으면 됩니다.</p>' +
+      '<details class="bridge-gemini"' + (state.geminiKey ? ' open' : '') + '>' +
+        '<summary>무료 Gemini API 키로 여기서 바로 생성</summary>' +
+        '<div class="form-row" style="margin-top:8px">' +
+          '<input class="input" id="geminiKey-' + p + '" type="password" placeholder="AIza… (이 브라우저에만 저장)" value="' + esc(state.geminiKey) + '" autocomplete="off" spellcheck="false" />' +
+          '<button class="btn btn-ghost" data-action="save-gemini-key" data-prefix="' + p + '" style="flex:0 0 auto">키 저장</button>' +
+        '</div>' +
+        '<div class="form-row">' +
+          '<select class="input" id="geminiModel-' + p + '">' + models.map((m) => '<option' + (m === model ? ' selected' : '') + '>' + esc(m) + '</option>').join('') + '</select>' +
+          '<button class="btn btn-primary" data-action="gemini-generate" data-prefix="' + p + '" style="flex:0 0 auto">Gemini로 생성</button>' +
+        '</div>' +
+        '<p class="form-note" id="geminiStatus-' + p + '">무료 키는 Google AI Studio에서 1분이면 발급됩니다. 요청은 generativelanguage.googleapis.com으로만 나갑니다.</p>' +
+      '</details>' +
+      '<label class="flabel" for="aiOut-' + p + '">AI가 준 30초 대본 붙여넣기</label>' +
+      '<textarea class="input" id="aiOut-' + p + '" placeholder="ChatGPT·Claude·Gemini 답변을 그대로 붙여넣으면 구간(0~3초)과 글자수를 확인하고, 내 대본으로 저장합니다.">' + esc(aiValue) + '</textarea>' +
+      '<div class="bridge-meta" id="aiMeta-' + p + '">' + scriptMetaHTML(aiValue) + '</div>' +
+      '<div class="studio-actions">' +
+        '<button class="btn btn-primary btn-sm" data-action="save-ai-script" data-prefix="' + p + '" data-id="' + esc(item.id) + '">' + icon('check', 12) + ' 내 대본으로 저장</button>' +
+        '<button class="btn btn-ghost btn-sm" data-action="copy-ai-script" data-prefix="' + p + '">' + icon('copy', 12) + ' 대본 복사</button>' +
+        '<button class="btn btn-ghost btn-sm" data-action="copy-bridge-prompt" data-prefix="' + p + '" data-id="' + esc(item.id) + '">' + icon('spark', 12) + ' 프롬프트 복사</button>' +
+        (state.board[item.id] ? '<button class="btn btn-ghost btn-sm" data-action="ai-script-to-memo" data-prefix="' + p + '" data-id="' + esc(item.id) + '">보드 메모에 붙이기</button>' : '') +
+      '</div>' +
+      '<p class="form-note bridge-saved">' + (saved ? '저장됨 · ' + esc(stamp(saved.savedAt)) + ' · ' + esc(saved.provider || '직접 붙여넣기') : '') + '</p>' +
+    '</div>';
+  }
+
+  function saveAiScript(id, text, provider, prefix) {
+    const t = String(text || '').trim();
+    if (!t) { toast('대본을 먼저 붙여넣으세요.', 'warn'); return false; }
+    state.aiScripts[id] = { text: t, savedAt: new Date().toISOString(), provider: provider || '직접 붙여넣기' };
+    store.set(KEY.aiScripts, state.aiScripts);
+    const pfx = prefix || 'm';
+    draftFor(pfx, id).ai = t;
+    const p = prefix || 'm';
+    const meta = document.getElementById('aiMeta-' + p);
+    if (meta) meta.innerHTML = scriptMetaHTML(t);
+    const box = document.getElementById('bridge-' + p);
+    if (box) {
+      const note = box.querySelector('.bridge-saved');
+      if (note) note.textContent = '저장됨 · ' + stamp(state.aiScripts[id].savedAt) + ' · ' + state.aiScripts[id].provider;
+    }
+    toast('내 대본으로 저장했습니다. 다시 열면 그대로 나옵니다.');
+    return true;
+  }
+
+  function geminiStatus(prefix, message, cls) {
+    const el = document.getElementById('geminiStatus-' + (prefix || 'm'));
+    if (!el) return;
+    el.className = cls || 'form-note';
+    el.textContent = message;
+  }
+
+  async function geminiGenerate(prefix) {
+    const p = prefix || 'm';
+    if (!B || state.geminiBusy) return;
+    const box = document.getElementById('bridge-' + p);
+    if (!box) return;
+    const item = findItem(box.dataset.item);
+    if (!item) return;
+    const keyEl = document.getElementById('geminiKey-' + p);
+    const modelEl = document.getElementById('geminiModel-' + p);
+    const key = ((keyEl && keyEl.value.trim()) || state.geminiKey || '').trim();
+    const model = (modelEl ? modelEl.value : state.geminiModel) || B.GEMINI_DEFAULT_MODEL;
+    if (!key) {
+      geminiStatus(p, '키를 넣거나, 위의 ChatGPT·Claude 버튼을 쓰세요.', 'form-error');
+      return;
+    }
+    state.geminiKey = key;
+    state.geminiModel = model;
+    store.set(KEY.geminiKey, key);
+    store.set(KEY.geminiModel, model);
+
+    const prompt = C.buildBridgePrompt(item, psyOverrides(p));
+    let req;
+    try { req = B.buildGeminiRequest({ apiKey: key, model: model, prompt: prompt }); }
+    catch (err) { geminiStatus(p, err.message, 'form-error'); return; }
+
+    state.geminiBusy = true;
+    geminiStatus(p, '생성 중… (10~30초)', 'form-note');
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 45000);
+    try {
+      const res = await fetch(req.url, Object.assign({}, req.init, { signal: controller.signal }));
+      clearTimeout(timer);
+      const rawText = await res.text();
+      let json = null;
+      try { json = JSON.parse(rawText); } catch (err) { json = null; }
+      if (!res.ok) {
+        const detail = json && json.error && json.error.message ? json.error.message : rawText;
+        geminiStatus(p, B.explainStatus(res.status, detail), 'form-error');
+        return;
+      }
+      const out = B.parseGeminiResponse(json);
+      if (!out.ok) { geminiStatus(p, out.error, 'form-error'); return; }
+      const ta = document.getElementById('aiOut-' + p);
+      const bEl = document.getElementById('bridge-' + p);
+      if (bEl) draftFor(p, bEl.dataset.item).ai = out.text;
+      if (ta) { ta.value = out.text; ta.dataset.provider = 'Gemini · ' + model; }
+      const meta = document.getElementById('aiMeta-' + p);
+      if (meta) meta.innerHTML = scriptMetaHTML(out.text);
+      geminiStatus(p, '대본을 받았습니다. 아래 [내 대본으로 저장]을 누르세요.' + (out.warnings.length ? ' ' + out.warnings[0] : ''), 'form-ok');
+      toast('Gemini가 30초 대본을 보냈습니다.');
+    } catch (err) {
+      clearTimeout(timer);
+      geminiStatus(p, err && err.name === 'AbortError'
+        ? '응답이 늦어 취소했습니다. 다시 시도하거나 다른 모델을 골라 보세요.'
+        : '연결하지 못했습니다. 키·네트워크·브라우저 차단을 확인하세요.', 'form-error');
+    } finally {
+      state.geminiBusy = false;
+    }
   }
 
   /* ---------- modal base ---------- */
@@ -652,12 +951,19 @@
 
       (item.product ? '<div class="sec-title">연결 상품<span class="line"></span></div><div class="product-strip"><span>🛍</span><span class="p-name">' + esc(item.product.name) + '</span><span class="p-price">' + C.formatCount(item.product.price) + '원</span></div>' : '') +
 
+      '<div class="sec-title">카피 심리학 · 8대 트리거<span class="line"></span></div>' +
+      psychPanelHTML(item, 'm') +
+
       '<div class="sec-title">바로 쓰는 대본 템플릿<span class="line"></span></div>' +
       '<pre class="script-out" style="max-height:200px">' + esc(script) + '</pre>' +
       '<div class="studio-actions">' +
       '<button class="btn btn-ghost btn-sm" data-action="copy-script" data-id="' + esc(item.id) + '">' + icon('copy', 12) + ' 대본 복사</button>' +
       '<button class="btn btn-ghost btn-sm" data-action="copy-prompt" data-id="' + esc(item.id) + '">' + icon('spark', 12) + ' 프롬프트 복사</button>' +
       '</div>' +
+
+      '<div class="sec-title">내 구독 AI로 30초 대본<span class="line"></span></div>' +
+      '<div class="form-note" style="margin-bottom:8px">ChatGPT · Claude · Gemini 중 지금 쓰는 곳으로 보냅니다. 프롬프트에는 이 영상의 수치·훅 분해·심리 진단과 내 제품이 함께 들어갑니다.</div>' +
+      bridgeHTML(item, 'm') +
 
       (saved ? boardEditor(item, saved) : '') +
       '</div></div></div>';
@@ -738,11 +1044,14 @@
       '<div class="kv"><span>내가 추가한 영상</span><b>' + state.userItems.length + '건</b></div>' +
       '<div class="kv"><span>보드에 저장</span><b>' + Object.keys(state.board).length + '건</b></div>' +
       '<div class="kv"><span>추적 계정</span><b>' + state.watchlist.length + '개</b></div>' +
+      '<div class="kv"><span>AI 대본 저장</span><b>' + Object.keys(state.aiScripts).length + '건</b></div>' +
+      '<div class="kv"><span>무료 Gemini 키</span><b>' + (state.geminiKey ? '저장됨 · ' + esc(state.geminiModel || '') : '없음 (버튼 3개만으로도 동작)') + '</b></div>' +
+      (state.geminiKey ? '<div class="form-row" style="margin-top:8px"><button class="btn btn-ghost" data-action="delete-gemini-key">Gemini 키 삭제</button></div>' : '') +
       '<div class="form-row" style="margin-top:12px">' +
       '<button class="btn btn-ghost" data-action="export-all-json">전체 백업(JSON)</button>' +
       '<button class="btn btn-ghost danger" data-action="reset-data">내 데이터 초기화</button>' +
       '</div>' +
-      '<p class="form-note">초기화하면 추가한 영상·보드·추적 목록·API 키가 지워지고 데모 데이터만 남습니다. 서버에는 아무것도 저장되지 않습니다.</p>' +
+      '<p class="form-note">초기화하면 추가한 영상·보드·추적 목록·API 키·AI 대본·Gemini 키가 지워지고 데모 데이터만 남습니다. 서버에는 아무것도 저장되지 않습니다.</p>' +
       '</div>';
     openModal(body, 'small', '설정');
   }
@@ -1221,15 +1530,23 @@
         openSettings();
         break;
       }
+      case 'delete-gemini-key': {
+        state.geminiKey = '';
+        store.del(KEY.geminiKey);
+        toast('Gemini 키를 삭제했습니다.');
+        openSettings();
+        break;
+      }
       case 'reset-data': openConfirm('내 데이터 초기화', '추가한 영상, 보드, 추적 목록, API 키가 이 브라우저에서 지워집니다. 되돌릴 수 없습니다.', 'do-reset'); break;
       case 'do-reset': {
         state.userItems = []; state.board = {}; state.watchlist = []; state.apiKey = ''; state.quota = null;
-        [KEY.items, KEY.board, KEY.watch, KEY.apiKey, KEY.quota].forEach(store.del);
+        state.aiScripts = {}; state.geminiKey = ''; state.geminiModel = ''; state.drafts = {};
+        [KEY.items, KEY.board, KEY.watch, KEY.apiKey, KEY.quota, KEY.aiScripts, KEY.geminiKey, KEY.geminiModel].forEach(store.del);
         closeModal(); renderAll(); toast('초기화했습니다.');
         break;
       }
       case 'export-all-json': {
-        const payload = { exportedAt: new Date().toISOString(), items: state.userItems, board: state.board, watchlist: state.watchlist };
+        const payload = { exportedAt: new Date().toISOString(), items: state.userItems, board: state.board, watchlist: state.watchlist, aiScripts: state.aiScripts };
         download('radar-backup-' + new Date().toISOString().slice(0, 10) + '.json', JSON.stringify(payload, null, 2), 'application/json');
         toast('백업 파일을 만들었습니다.');
         break;
@@ -1244,7 +1561,7 @@
       case 'export-board-json': {
         if (!Object.keys(state.board).length) { toast('보드가 비어 있습니다.', 'warn'); break; }
         const items = allItems().filter((i) => state.board[i.id]).map((i) => ({
-          ...i, metrics: C.computeMetrics(i, state.now), board: state.board[i.id],
+          ...i, metrics: C.computeMetrics(i, state.now), board: state.board[i.id], aiScript: state.aiScripts[i.id] || null,
         }));
         download('radar-board-' + new Date().toISOString().slice(0, 10) + '.json', JSON.stringify({ exportedAt: new Date().toISOString(), count: items.length, items }, null, 2), 'application/json');
         toast('JSON을 내려받았습니다.');
@@ -1293,6 +1610,94 @@
         const text = item ? C.buildPrompt(item, { product: $('#studioProduct') ? $('#studioProduct').value : undefined })
           : ($('#studioPrompt') ? $('#studioPrompt').textContent : '');
         copyText(text).then((ok) => toast(ok ? '프롬프트를 복사했습니다.' : '복사에 실패했습니다.'));
+        break;
+      }
+      case 'bridge-open': {
+        if (e && e.preventDefault) e.preventDefault();
+        if (!B) break;
+        const bitem = findItem(el.dataset.id);
+        if (!B || !bitem) break;
+        const bp = el.dataset.prefix || 'm';
+        const prompt = C.buildBridgePrompt(bitem, psyOverrides(bp));
+        const link = B.linkFor(el.dataset.provider, prompt);
+        const win = window.open(link.url, '_blank');
+        if (win) { try { win.opener = null; } catch (err) {} }
+        copyText(prompt).then((copied) => {
+          if (win) {
+            toast(copied ? link.label + ' 창을 열었습니다. 프롬프트도 복사해 뒀습니다.' : link.label + ' 창을 열었습니다.');
+          } else {
+            toast(copied ? '팝업이 차단됐습니다. 프롬프트는 복사해 뒀으니 ' + link.label + '를 직접 열어 붙여넣으세요.'
+              : '팝업이 차단됐습니다. ' + link.label + '를 직접 열어 주세요.', 'warn');
+          }
+        });
+        break;
+      }
+      case 'copy-bridge-prompt': {
+        const bitem = findItem(el.dataset.id);
+        if (!bitem) break;
+        const prompt = C.buildBridgePrompt(bitem, psyOverrides(el.dataset.prefix || 'm'));
+        copyText(prompt).then((ok) => toast(ok ? '프롬프트를 복사했습니다 (' + C.countChars(prompt) + '자).' : '복사에 실패했습니다.'));
+        break;
+      }
+      case 'save-gemini-key': {
+        const p = el.dataset.prefix || 'm';
+        const inputEl = document.getElementById('geminiKey-' + p);
+        const key = inputEl ? inputEl.value.trim() : '';
+        state.geminiKey = key;
+        store.set(KEY.geminiKey, key);
+        geminiStatus(p, key ? '키를 이 브라우저에만 저장했습니다.' : '키를 지웠습니다. ChatGPT·Claude 버튼은 그대로 쓸 수 있습니다.', key ? 'form-ok' : 'form-note');
+        toast(key ? 'Gemini 키를 저장했습니다.' : 'Gemini 키를 지웠습니다.');
+        break;
+      }
+      case 'gemini-generate': {
+        geminiGenerate(el.dataset.prefix || 'm');
+        break;
+      }
+      case 'save-ai-script': {
+        const p = el.dataset.prefix || 'm';
+        const ta = document.getElementById('aiOut-' + p);
+        saveAiScript(el.dataset.id, ta ? ta.value : '', (ta && ta.dataset.provider) || '직접 붙여넣기', p);
+        break;
+      }
+      case 'copy-ai-script': {
+        const p = el.dataset.prefix || 'm';
+        const ta = document.getElementById('aiOut-' + p);
+        const text = ta ? ta.value : '';
+        if (!text.trim()) { toast('복사할 대본이 없습니다.', 'warn'); break; }
+        copyText(text).then((ok) => toast(ok ? '대본을 복사했습니다.' : '복사에 실패했습니다.'));
+        break;
+      }
+      case 'ai-script-to-memo': {
+        const p = el.dataset.prefix || 'm';
+        const entry2 = state.board[id];
+        const ta = document.getElementById('aiOut-' + p);
+        const text = ta ? ta.value.trim() : '';
+        if (!entry2) break;
+        if (!text) { toast('대본을 먼저 붙여넣으세요.', 'warn'); break; }
+        entry2.memo = (entry2.memo ? entry2.memo + '\n\n' : '') + '[AI 대본]\n' + text;
+        persistBoard();
+        renderBoard();
+        toast('보드 메모에 붙였습니다.');
+        if (!$('#modalRoot').hidden && detailId === id) openDetail(id);
+        break;
+      }
+      case 'psy-fw': {
+        const p = el.dataset.prefix || 'm';
+        const root = document.getElementById('psy-' + p);
+        if (!root) break;
+        root.dataset.fw = el.dataset.fw;
+        $$('.psy-tab', root).forEach((b) => b.classList.toggle('is-on', b.dataset.fw === el.dataset.fw));
+        updatePsyOut(p);
+        break;
+      }
+      case 'copy-psy': {
+        const p = el.dataset.prefix || 'm';
+        const root = document.getElementById('psy-' + p);
+        if (!root) break;
+        const psyItem = findItem(root.dataset.item);
+        const fwId = root.dataset.fw || 'PAS';
+        const text = C.psychFrameworkText(psyItem, fwId, psyOverrides(p));
+        copyText(text).then((ok) => toast(ok ? fwId + ' 문구를 복사했습니다.' : '복사에 실패했습니다.'));
         break;
       }
       case 'fill-sample-csv': {
@@ -1446,6 +1851,21 @@
       $('.search-clear').hidden = !e.target.value;
     }
     if (e.target.id === 'studioProduct') updateStudioScript();
+    if (e.target.hasAttribute && e.target.hasAttribute('data-psy')) {
+      const root = e.target.closest('.psy');
+      if (root) {
+        const pfx = root.id.replace('psy-', '');
+        draftFor(pfx, root.dataset.item)[e.target.dataset.psy] = e.target.value;
+        psyInputDebounced(pfx);
+      }
+    }
+    if (e.target.id && e.target.id.indexOf('aiOut-') === 0) {
+      const pfx = e.target.id.slice(6);
+      const bEl = document.getElementById('bridge-' + pfx);
+      if (bEl) draftFor(pfx, bEl.dataset.item).ai = e.target.value;
+      aiMetaDebounced(pfx, e.target.value);
+      delete e.target.dataset.provider;
+    }
   });
 
   function updateStudioScript() {
@@ -1556,6 +1976,10 @@
     }
     if (e.target.id === 'studioSelect') {
       renderAI();
+    }
+    if (e.target.id && e.target.id.indexOf('geminiModel-') === 0) {
+      state.geminiModel = e.target.value;
+      store.set(KEY.geminiModel, state.geminiModel);
     }
   });
 

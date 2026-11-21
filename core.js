@@ -58,7 +58,12 @@
   const PLATFORM_LABEL = { instagram: '인스타', youtube: '유튜브', tiktok: '틱톡' };
 
   /* ---------- small helpers ---------- */
-  const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+  function clamp(n, lo, hi) { return Math.min(hi, Math.max(lo, n)); }
+
+  function countChars(text) {
+    const s = String(text === null || text === undefined ? '' : text);
+    return Array.from ? Array.from(s).length : s.length;
+  }
 
   function group3(n) {
     const s = String(Math.round(Math.abs(n)));
@@ -834,6 +839,285 @@
 
   const QUOTA = { searchPerDay: 100, unitsPerDay: 10000 };
 
+  /* ---------- copy psychology engine (engines/copy-psych-engine.js) ---------- */
+  // 브라우저에서는 index.html이 먼저 읽어 둔 window.CopyPsych,
+  // node 테스트에서는 같은 폴더의 engines 사본을 require 한다.
+  const CopyPsych = (typeof window !== 'undefined' && window.CopyPsych)
+    ? window.CopyPsych
+    : (typeof require === 'function' ? require('./engines/copy-psych-engine.js') : null);
+
+  const PSY_AUDIENCE = {
+    '뷰티·패션': '화장품 고르다 후기만 30분째 보는 20~30대',
+    '푸드·맛집': '매일 저녁 뭐 먹을지 고민하는 자취·직장인',
+    '리빙·꿀템': '정리해도 사흘 만에 다시 어질러지는 집에 사는 사람',
+    '테크·AI': 'AI 툴을 결제해두고 한 달에 두 번 쓰는 직장인',
+    '재테크·썰': '월급은 그대로인데 나가는 돈만 늘어난 사회초년생',
+    '운동·헬스': '운동을 시작해도 사흘을 못 넘기는 직장인',
+    '여행·일상': '주말 여행을 계획하다 하루를 다 쓰는 사람',
+    '기타': '알고 있어도 매번 같은 자리에서 막히는 사람',
+  };
+
+  const PSY_PROBLEM = {
+    '뷰티·패션': '후기만 30분째 보다가 결국 지난번 화장품을 다시 삽니다',
+    '푸드·맛집': '저녁 메뉴를 고르다 30분을 쓰고 결국 배달을 시킵니다',
+    '리빙·꿀템': '정리해도 사흘만 지나면 다시 어질러집니다',
+    '테크·AI': 'AI 툴을 결제해두고 한 달에 두 번 씁니다',
+    '재테크·썰': '카드값이 왜 이렇게 나왔는지 매달 확인하지 못합니다',
+    '운동·헬스': '운동을 시작한 지 사흘 만에 다시 멈춥니다',
+    '여행·일상': '주말 여행을 계획하다 하루를 다 쓰고 집에 남습니다',
+    '기타': '알고 있는데도 매번 같은 자리에서 막힙니다',
+  };
+
+  const PSY_SOLUTION = {
+    '뷰티·패션': '영상의 기준 하나만 적용하면 고르는 시간이 3분으로 줄어듭니다',
+    '푸드·맛집': '영상의 순서 그대로 하면 저녁 준비가 10분에 끝납니다',
+    '리빙·꿀템': '영상의 배치 한 곳만 바꾸면 정리 시간이 절반으로 줄어듭니다',
+    '테크·AI': '영상의 3단계만 따라 하면 오늘 바로 결과가 나옵니다',
+    '재테크·썰': '영상의 점검 순서대로 하면 새는 돈이 먼저 보입니다',
+    '운동·헬스': '영상의 동작 하나만 매일 10분으로 바꿉니다',
+    '여행·일상': '영상의 동선 그대로면 예약과 이동이 20분에 끝납니다',
+    '기타': '영상의 순서를 그대로 따라 하면 한 번에 끝납니다',
+  };
+
+  function psychCategory(item) {
+    return item && PSY_AUDIENCE[item.category] ? item.category : '기타';
+  }
+
+  /** 진단할 문구: 수집된 제목·훅·해시태그·CTA·상품명 (대본 본문은 수집되지 않는다) */
+  function psychSourceText(item) {
+    if (!item) return '';
+    return [
+      shortCaption(item),
+      item.hookText || '',
+      (item.hashtags || []).join(' '),
+      item.cta || '',
+      item.product ? item.product.name : '',
+    ].map((s) => String(s).trim()).filter(Boolean).join('\n');
+  }
+
+  /**
+   * 8대 트리거 진단.
+   * @param {object} item
+   * @param {object} [opts] { text: 직접 넣은 문구, nowMs }
+   */
+  function psychProfile(item, opts) {
+    const o = opts || {};
+    const text = (o.text !== undefined && o.text !== null) ? String(o.text) : psychSourceText(item);
+    if (!CopyPsych) {
+      return {
+        ok: false, text: text, chars: countChars(text), total: 0, grade: null,
+        triggers: [], strengths: [], gaps: [], recommendations: [], coverage: 0,
+        strongCount: 0, weakCount: 0, flags: null, stats: null,
+        note: '카피 심리학 엔진을 불러오지 못했습니다.',
+      };
+    }
+    const d = CopyPsych.diagnose(text);
+    const triggers = d.triggers.map((t) => ({
+      id: t.id, name: t.name, en: t.en, weight: t.weight,
+      score: t.score, level: t.level, claim: t.claim, fix: t.fix,
+    }));
+    return {
+      ok: true,
+      version: CopyPsych.VERSION,
+      text: text,
+      chars: d.stats.chars,
+      total: d.total,
+      grade: d.grade,
+      triggers: triggers,
+      strengths: d.strengths,
+      gaps: d.gaps,
+      recommendations: d.recommendations,
+      coverage: triggers.filter((t) => t.score >= 40).length,
+      strongCount: d.strengths.length,
+      weakCount: d.weakCount,
+      flags: d.flags,
+      stats: d.stats,
+    };
+  }
+
+  /**
+   * 프레임워크 생성 입력값.
+   * 문제·해결은 카테고리 기본 문장에서 출발하고, 근거 숫자는 비워 둔다.
+   * (레퍼런스 영상의 조회수를 내 실적처럼 옮겨 쓰지 않기 위해서)
+   */
+  function psychInputFor(item, opts) {
+    const o = opts || {};
+    const cat = psychCategory(item);
+    const keyword = item ? keywordOf(item) : '이 주제';
+    const pick = (v, fallback) => (v === undefined || v === null || String(v).trim() === '') ? fallback : String(v).trim();
+    return {
+      product: pick(o.product, item && item.product ? item.product.name : keyword + ' 내 버전'),
+      target: pick(o.target, PSY_AUDIENCE[cat]),
+      problem: pick(o.problem, PSY_PROBLEM[cat]),
+      solution: pick(o.solution, PSY_SOLUTION[cat]),
+      proof: pick(o.proof, ''),
+      cta: pick(o.cta, '저장해두고 오늘 한 번만 써보기'),
+      urgency: pick(o.urgency, ''),
+      guarantee: pick(o.guarantee, ''),
+      priceBefore: pick(o.priceBefore, ''),
+      priceAfter: pick(o.priceAfter, ''),
+    };
+  }
+
+  /** 프레임워크 1종 + 자체 진단 */
+  function psychFramework(item, id, opts) {
+    const o = opts || {};
+    const key = String(id || 'PAS').toUpperCase();
+    if (!CopyPsych) return { ok: false, id: key, fw: null, input: null, error: 'engine-missing' };
+    const input = psychInputFor(item, o);
+    let fw;
+    try {
+      fw = CopyPsych.build(key, input, { variant: o.variant || 0 });
+    } catch (e) {
+      return { ok: false, id: key, fw: null, input: input, error: e.message };
+    }
+    const full = CopyPsych.diagnose(fw.title + '\n' + fw.body);
+    return {
+      ok: true,
+      id: fw.id,
+      input: input,
+      fw: Object.assign({}, fw, {
+        coverage: full.triggers.filter((t) => t.score >= 40).length,
+        weakCount: full.weakCount,
+        gapsFull: full.gaps.slice(0, 2).map((g) => ({ id: g.id, name: g.name, score: g.score, action: g.action })),
+      }),
+    };
+  }
+
+  /** 프레임워크 4종 동시 생성 + 비교 */
+  function psychRewrite(item, opts) {
+    const o = opts || {};
+    if (!CopyPsych) {
+      return { ok: false, input: null, items: [], best: null, comparison: [], recommendation: null, reason: 'engine-missing' };
+    }
+    const input = psychInputFor(item, o);
+    const out = CopyPsych.generateAll(input, { variant: o.variant || 0 });
+    const items = out.items.map((it) => {
+      const full = CopyPsych.diagnose(it.title + '\n' + it.body);
+      return Object.assign({}, it, {
+        coverage: full.triggers.filter((t) => t.score >= 40).length,
+        weakCount: full.weakCount,
+      });
+    });
+    const best = items.filter((it) => it.id === out.best.id)[0] || items[0];
+    return {
+      ok: true,
+      input: input,
+      items: items,
+      best: best,
+      comparison: out.comparison,
+      recommendation: out.recommendation,
+    };
+  }
+
+  /** 복사용 카피 텍스트 */
+  function frameworkText(fw) {
+    if (!fw) return '';
+    const lines = ['[' + fw.id + '] ' + fw.name, '제목: ' + fw.title, ''];
+    (fw.sections || []).forEach((s) => lines.push('· ' + s.label + ': ' + s.text));
+    lines.push('', '※ 초안입니다. 내 근거 숫자와 실제 조건으로 고쳐 쓰세요.');
+    return lines.join('\n');
+  }
+
+  function psychFrameworkText(item, id, opts) {
+    const r = psychFramework(item, id, opts);
+    return r.ok ? frameworkText(r.fw) : '';
+  }
+
+  /* ---------- 내 구독 AI 브리지 프롬프트 ---------- */
+  function buildBridgePrompt(item, opts) {
+    const o = opts || {};
+    if (!item) return '';
+    const now = o.nowMs || Date.now();
+    const m = computeMetrics(item, now);
+    const prof = psychProfile(item, { nowMs: now });
+    const input = psychInputFor(item, o);
+    const strong = prof.triggers.slice().sort((a, b) => b.score - a.score)
+      .filter((t) => t.score > 0).slice(0, 3).map((t) => t.name + ' ' + t.score);
+    const gaps = prof.gaps.slice(0, 3).map((g) => g.name + ' ' + g.score);
+    const platform = PLATFORM_LABEL[item.platform] || item.platform;
+
+    const lines = [];
+    lines.push('너는 한국 숏폼(릴스·쇼츠·틱톡) 대본 작가다.');
+    lines.push('아래 레퍼런스는 이미 터진 영상이다. 구조와 심리 트리거만 가져오고, 문장은 내 채널·내 상품 버전으로 완전히 새로 써라.');
+    lines.push('');
+    lines.push('[레퍼런스]');
+    lines.push('- 제목: ' + (item.caption || '(제목 없음)'));
+    lines.push('- 크리에이터·카테고리: ' + (item.creator || '—') + ' · ' + (item.category || '—') + ' · ' + platform);
+    if (!m.pending) {
+      lines.push('- 성과: 조회 ' + formatCount(item.views) + ' · 좋아요 ' + formatCount(item.likes) + ' · 댓글 ' + formatCount(item.comments));
+      lines.push('- 채널 평균 대비 ' + formatMultiple(m.viralMultiple) + ' · VPH ' + formatVph(m.vph) + ' · 참여율 ' + formatPercent(m.engagementRate));
+    }
+    lines.push('- 훅: ' + (item.hookType || '—') + ' — "' + (item.hookText || shortCaption(item)) + '"');
+    if ((item.hashtags || []).length) lines.push('- 해시태그: ' + item.hashtags.join(' '));
+    if (item.durationSec) lines.push('- 길이: ' + item.durationSec + '초');
+    if (item.product) lines.push('- 연결 상품: ' + item.product.name);
+    lines.push('');
+    lines.push('[이 제목·훅의 심리 트리거] (' + prof.chars + '자 진단 · 커버리지 ' + prof.coverage + '/8)');
+    lines.push('- 강한 축: ' + (strong.length ? strong.join(', ') : '없음'));
+    lines.push('- 비어 있는 축: ' + (gaps.length ? gaps.join(', ') : '없음'));
+    lines.push('※ 비어 있는 축은 내 상품에 사실이 있을 때만 채워라. 없는 수치는 만들지 마라.');
+    lines.push('');
+    lines.push('[내 조건]');
+    lines.push('- 내 채널·상품: ' + input.product);
+    lines.push('- 타깃: ' + input.target);
+    lines.push('- 목표: ' + (o.goal || '저장·댓글 유도'));
+    lines.push('- 길이: 30초 내외, 5비트(0~3초 훅 → 3~8초 문제 → 8~15초 증거 → 15~22초 반전 → 22~30초 CTA)');
+    lines.push('- 톤: 반말 구어체');
+    if (input.proof) lines.push('- 내 근거 숫자: ' + input.proof);
+    lines.push('');
+    lines.push('[출력 형식]');
+    lines.push('1) 0~3초 훅 1문장 (자막용, 12자 이내)');
+    lines.push('2) 5비트 표: 구간 | 자막 | 나레이션');
+    lines.push('3) 촬영 컷 5개 (각 3~5초, 무엇을 어디에 두고 찍는지)');
+    lines.push('4) 첫 댓글 1개 (질문형, 광고 문구 없이)');
+    lines.push('');
+    lines.push('[규칙]');
+    lines.push('1) 첫 3초 안에 ' + (item.hookType || '훅') + ' 훅을 넣고, 숫자나 구체 상황을 반드시 포함한다.');
+    lines.push('2) 말투는 반말 구어체. 번역체·AI 요약체·존댓말 금지.');
+    lines.push('3) 자막은 한 줄 9자 이내. 자막과 나레이션을 구분해 표로 정리한다.');
+    lines.push('4) 레퍼런스 수치를 내 실적처럼 쓰지 않는다. 과장·허위 수치·확인되지 않은 효능 금지.');
+    lines.push('5) 마지막에 촬영 컷 리스트를 붙인다.');
+    return lines.join('\n');
+  }
+
+  /* ---------- AI가 준 대본 읽기 ---------- */
+  function scriptMeta(text) {
+    const raw = String(text === null || text === undefined ? '' : text).replace(/\r\n?/g, '\n');
+    const all = raw.split('\n');
+    let fences = 0;
+    const lines = all.filter((l) => {
+      if (/^\s*```/.test(l)) { fences++; return false; }
+      return true;
+    });
+    const body = lines.join('\n').trim();
+    const ranges = [];
+    lines.forEach((line) => {
+      const m = line.match(/(\d{1,2})\s*[~\-–]\s*(\d{1,2})\s*초/);
+      if (!m) return;
+      const range = Number(m[1]) + '~' + Number(m[2]) + '초';
+      if (ranges.indexOf(range) === -1) ranges.push(range);
+    });
+    const chars = countChars(body);
+    const warnings = [];
+    if (!body) {
+      warnings.push('아직 대본이 비어 있습니다.');
+    } else {
+      if (chars < 80) warnings.push('대본이 ' + chars + '자로 짧습니다. 30초 대본이면 보통 400자 이상입니다.');
+      if (ranges.length < 3) warnings.push('구간 표시(0~3초 등)를 ' + ranges.length + '개만 찾았습니다. 표 형태로 받으면 더 잘 읽힙니다.');
+    }
+    if (fences) warnings.push('코드블록 표시(```)는 지웠습니다.');
+    return {
+      chars: chars,
+      lines: lines.filter((l) => l.trim()).length,
+      beats: ranges.map((r) => ({ range: r })),
+      hasHook: /훅/.test(body),
+      hasCta: /(CTA|행동|마무리)/.test(body),
+      warnings: warnings,
+      text: body,
+    };
+  }
+
   /* ---------- misc ---------- */
   function summarize(items, nowMs) {
     const now = nowMs || Date.now();
@@ -874,6 +1158,10 @@
     csvEscape, toCsv, boardRows, toBoardCsv, toRadarCsv,
     normalizeStatus, nextStatus, prevStatus, boardGroups,
     hookLibrary, hookStats, buildHookAnalysis, buildScript, buildPrompt,
+    psychSourceText, psychProfile, psychInputFor, psychFramework, psychRewrite,
+    frameworkText, psychFrameworkText, buildBridgePrompt, scriptMeta,
+    PSY_AUDIENCE, PSY_PROBLEM, PSY_SOLUTION,
+    countChars,
     quotaDateKey, bumpQuota, summarize, itemTitle, isPending,
   };
 });

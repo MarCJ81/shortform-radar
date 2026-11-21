@@ -404,7 +404,7 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 22px 20px 60px; }
 }
 .panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
 .panel-head h2 { font-size: 14.5px; }
-.panel-head .muted { font-size: 11.5px; }
+.panel-head .muted { font-size: 11.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 62%; }
 .commerce-panel { display: grid; grid-template-columns: 1.05fr 1fr; gap: 14px; margin-bottom: 22px; }
 .bar-row { display: grid; grid-template-columns: 84px 1fr 74px; align-items: center; gap: 10px; padding: 6px 0; }
 .bar-row .bl { font-size: 12px; font-weight: 600; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -542,6 +542,71 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 22px 20px 60px; }
 }
 .studio-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 
+/* ── 카피 심리학 · 8대 트리거 ───────────────────── */
+.psy { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.psy-missing { font-size: 12px; color: var(--ink-3); background: var(--surface-2); border: 1px dashed var(--line-strong); border-radius: 10px; padding: 10px 12px; line-height: 1.55; }
+.psy-head { display: flex; align-items: center; gap: 12px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; min-width: 0; }
+.psy-score { flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 76px; height: 62px; border-radius: 10px; background: linear-gradient(135deg, var(--brand-2), var(--brand)); color: #fff; box-shadow: 0 6px 16px -10px rgba(232, 31, 90, .8); }
+.psy-score b { font-size: 24px; line-height: 1; letter-spacing: -.03em; }
+.psy-score b i { font-style: normal; font-size: 12px; opacity: .85; }
+.psy-score span { font-size: 9px; font-weight: 700; opacity: .94; margin-top: 3px; }
+.psy-headline { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.psy-headline b { font-size: 12.5px; }
+.psy-headline span { font-size: 11px; color: var(--ink-3); line-height: 1.4; }
+.psy-headline .psy-note { color: var(--ink-4); font-size: 10.5px; }
+.psy-bars { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 14px; min-width: 0; padding-right: 2px; }
+.psy-bar { display: grid; grid-template-columns: 84px minmax(0, 1fr) 24px; gap: 6px; align-items: center; min-width: 0; }
+.psy-bar .pb-name { font-size: 10.5px; color: var(--ink-2); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.psy-bar .pb-track { height: 6px; border-radius: 99px; background: var(--surface-3); overflow: hidden; }
+.psy-bar .pb-track i { display: block; height: 100%; border-radius: 99px; background: var(--line-strong); }
+.psy-bar.ok .pb-track i { background: linear-gradient(90deg, #f59e0b, #ea580c); }
+.psy-bar.strong .pb-track i { background: linear-gradient(90deg, var(--accent), var(--brand)); }
+.psy-bar .pb-val { font-size: 10px; font-weight: 700; color: var(--ink-3); text-align: right; font-variant-numeric: tabular-nums; }
+.psy-gaps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.psy-gaps li { background: var(--surface-2); border: 1px solid var(--line); border-left: 3px solid var(--brand); border-radius: 8px; padding: 7px 9px; }
+.psy-gaps b { font-size: 11px; }
+.psy-gscore { font-size: 10px; color: var(--brand); font-weight: 800; margin-left: 5px; }
+.psy-gaps p { font-size: 11px; color: var(--ink-3); line-height: 1.5; margin-top: 2px; word-break: break-word; }
+.psy-rewrite { border-top: 1px dashed var(--line); padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.psy-rtitle { font-size: 12px; font-weight: 800; }
+.psy-rtitle span { font-size: 10.5px; font-weight: 600; color: var(--ink-4); margin-left: 6px; }
+.psy-grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.psy-field { display: flex; flex-direction: column; gap: 3px; }
+.psy-field span { font-size: 10.5px; font-weight: 700; color: var(--ink-3); }
+.psy-field .input { height: 32px; font-size: 12px; }
+.psy-more summary { font-size: 11px; font-weight: 700; color: var(--ink-3); cursor: pointer; margin-bottom: 6px; }
+.psy-tabs { display: inline-flex; background: var(--surface-3); border-radius: 9px; padding: 3px; gap: 2px; align-self: flex-start; }
+.psy-tab { border: 0; background: transparent; border-radius: 6px; padding: 5px 12px; font-size: 11.5px; font-weight: 800; color: var(--ink-3); cursor: pointer; font-family: inherit; }
+.psy-tab.is-on { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-1); }
+.psy-out { background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.psy-fw { font-size: 10px; font-weight: 800; color: var(--brand); letter-spacing: .02em; }
+.psy-fw-title { font-size: 13px; font-weight: 700; line-height: 1.45; margin: 4px 0 8px; word-break: break-word; }
+.psy-sec { display: grid; grid-template-columns: 40px 1fr; gap: 8px; padding: 3px 0; }
+.psy-sec-label { font-size: 10px; font-weight: 800; color: var(--ink-4); padding-top: 2px; }
+.psy-sec p { font-size: 11.5px; color: var(--ink-2); line-height: 1.6; word-break: break-word; }
+.psy-fw-meta { font-size: 10.5px; color: var(--ink-4); border-top: 1px dashed var(--line); margin-top: 8px; padding-top: 6px; }
+.psy-fw-meta b { color: var(--ink-2); }
+.psy-panel, .bridge-panel { margin-top: 14px; }
+
+/* ── 내 구독 AI 브리지 ──────────────────────────── */
+.bridge { display: flex; flex-direction: column; gap: 8px; }
+.bridge-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.bridge-btn { gap: 6px; }
+.bridge-btn .b-tag { font-size: 9px; font-weight: 800; padding: 1px 5px; border-radius: 5px; background: rgba(22, 163, 74, .14); color: var(--ok); }
+.bridge-btn .b-tag.paste { background: var(--surface-3); color: var(--ink-3); }
+.bridge .input { font-size: 12px; }
+.bridge textarea.input { height: 124px; }
+.bridge-gemini summary { font-size: 11px; font-weight: 700; color: var(--ink-3); cursor: pointer; }
+.bridge-gemini .form-row { margin-top: 8px; }
+.bridge-meta { min-height: 18px; }
+.ai-chips { display: flex; gap: 5px; flex-wrap: wrap; }
+.ai-chip { font-size: 10px; font-weight: 700; border-radius: 6px; padding: 2px 7px; background: var(--surface-3); color: var(--ink-3); }
+.ai-chip.ok { background: rgba(22, 163, 74, .12); color: var(--ok); }
+.ai-chip.warn { background: rgba(234, 88, 12, .12); color: var(--warn); }
+.ai-warn { margin: 4px 0 0; padding-left: 16px; font-size: 10.5px; color: var(--warn); line-height: 1.5; }
+.form-error { font-size: 11.5px; color: #dc2626; line-height: 1.5; }
+.form-ok { font-size: 11.5px; color: var(--ok); line-height: 1.5; }
+
 /* ── modal ───────────────────────────────────────── */
 .modal-root { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; padding: 22px; }
 .modal-backdrop { position: absolute; inset: 0; background: rgba(8, 10, 15, .58); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); animation: fade .16s ease; }
@@ -656,6 +721,8 @@ label.flabel { display: block; font-size: 11px; font-weight: 700; color: var(--i
 .footer { border-top: 1px solid var(--line); margin-top: 20px; }
 .footer-inner { max-width: var(--maxw); margin: 0 auto; padding: 22px 20px 34px; font-size: 11.5px; color: var(--ink-3); display: flex; flex-direction: column; gap: 4px; }
 .footer-inner .muted { color: var(--ink-4); }
+.footer-links a { color: var(--ink-3); text-decoration: underline; text-underline-offset: 2px; }
+.footer-links a:hover { color: var(--ink); }
 
 /* ── responsive ──────────────────────────────────── */
 @media (max-width: 1240px) {
@@ -712,6 +779,10 @@ label.flabel { display: block; font-size: 11px; font-weight: 700; color: var(--i
   .stat b { font-size: 14px; }
   .account-stats { width: 100%; margin-left: 0; }
   .detail-stats { grid-template-columns: repeat(2, 1fr); }
+  .psy-bars { grid-template-columns: 1fr; }
+  .psy-grid2 { grid-template-columns: 1fr; }
+  .psy-sec { grid-template-columns: 34px 1fr; }
+  .bridge-btns .btn { flex: 1 1 auto; }
   .player-bar { display: none; }
   .source-note .dot-sep { display: none; }
   .source-note .note-sub { display: none; }

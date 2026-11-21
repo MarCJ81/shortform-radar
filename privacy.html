@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="favicon.svg" />
+<title>개인정보 처리 방침 — 떡상 레이더</title>
+<meta name="description" content="떡상 레이더는 서버 없이 브라우저에서만 동작하는 정적 앱입니다. 수집하는 개인정보가 없고, API 키는 브라우저에만 저장됩니다." />
+<style>
+  :root { color-scheme: light dark; }
+  body { max-width: 720px; margin: 0 auto; padding: 40px 20px 80px; font: 15px/1.75 -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; color: #14181c; background: #fbfcfd; }
+  @media (prefers-color-scheme: dark) { body { color: #e9edf1; background: #0b0e11; } a { color: #7cc4ff; } }
+  h1 { font-size: 24px; letter-spacing: -.02em; }
+  h2 { font-size: 16px; margin-top: 28px; }
+  .muted { opacity: .7; font-size: 13px; }
+  a { color: #0f6fd1; }
+</style>
+</head>
+<body>
+<h1>개인정보 처리 방침</h1>
+<p class="muted">떡상 레이더(Shortform Radar) · 최종 갱신 2026-11-21</p>
+
+<h2>1. 수집하는 개인정보</h2>
+<p>없습니다. 이 앱은 회원가입·로그인·결제가 없고, 운영자 서버가 없습니다. 보드에 저장한 카드, 필터·설정, 직접 넣은 YouTube Data API 키와 Gemini API 키는 모두 사용자의 브라우저 localStorage에만 저장됩니다.</p>
+
+<h2>2. 외부 전송</h2>
+<p>페이지를 열기만 하면 외부로 나가는 요청이 없습니다. 다음 경우에만 사용자가 넣은 키로 해당 서비스에 요청이 갑니다.</p>
+<ul>
+  <li>YouTube Data API: 사용자가 키를 넣고 '실시간 수집'을 눌렀을 때 검색어가 전송됩니다.</li>
+  <li>Google Generative Language API(Gemini): 사용자가 키를 넣고 AI 분석 버튼을 눌렀을 때 입력한 문구가 전송됩니다.</li>
+  <li>YouTube 썸네일: 실시간 수집 결과의 썸네일은 YouTube 이미지 주소에서 직접 불러옵니다.</li>
+  <li>AI 브리지: 'AI에게 물어보기'는 새 창에서 해당 AI 서비스 페이지를 여는 방식이며, 앱이 내용을 대신 보내지 않습니다.</li>
+</ul>
+<p>API 키는 어느 서버에도 저장·전송되지 않고, 브라우저 저장소를 지우면 함께 삭제됩니다.</p>
+
+<h2>3. 쿠키·추적</h2>
+<p>쿠키를 쓰지 않습니다. 분석 도구·광고 픽셀·외부 트래커를 넣지 않습니다.</p>
+
+<h2>4. 보관과 삭제</h2>
+<p>모든 데이터는 브라우저 저장소에만 있고, 앱의 보드에서 카드를 지우거나 브라우저 사이트 데이터를 삭제하면 함께 사라집니다. 운영자는 사용자의 데이터를 보관하지 않으므로 별도 삭제 요청 대상이 없습니다.</p>
+
+<h2>5. 제3자 제공</h2>
+<p>제3자에게 제공하는 데이터가 없습니다. 사용자가 직접 실행한 API 요청은 사용자가 고른 서비스(Google)로만 갑니다.</p>
+
+<h2>6. 데모 데이터</h2>
+<p>앱에 들어 있는 수치는 화면 확인용 시뮬레이션 데이터이며 실제 채널·게시물의 성과가 아닙니다.</p>
+
+<h2>7. 문의</h2>
+<p>이 앱은 정적 파일로 배포되며 운영자에게 개인정보가 전달되지 않습니다. 문의·오류 제보는 배포 페이지에 안내된 연락처나 배포 저장소의 이슈로 남겨 주세요.</p>
+
+<p><a href="./">← 앱으로 돌아가기</a></p>
+</body>
+</html>
