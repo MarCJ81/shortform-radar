@@ -25,7 +25,7 @@
       · buildProPrompt('blog'|'commerce'|'cardnews'|'reviewReply'|'shortform'|'image')
       · AI 티 제거·구어체·표시광고법/의료법 회피·JSON 구조화 규칙 내장
    5) 무료 AI 맛보기 서버 (v1.1.0)
-      · generateFree() — 키 없이 https://free-ai-taste.goodday810202.workers.dev/v1/generate
+      · generateFree() — 키 없이 https://free-ai-taste.onetap-ai.workers.dev/v1/generate
       · 503 all_providers_busy 는 1회 자동 재시도
       · 429 free_quota_exceeded 등은 한국어 소진 안내 + '무료 Gemini 키 / 구독 AI 브리지' 전환 카드
       · 자체 서버에 같은 주소를 넣으면 기존 모달만으로도 동작
@@ -41,7 +41,7 @@
   var EVENT_NAME = 'proconnector:change';
 
   /* 무료 AI 맛보기(Cloudflare Worker) — 키 없이 몇 번 써 보고 Pro 로 넘기는 경로 */
-  var FREE_TASTE_HOST = 'free-ai-taste.goodday810202.workers.dev';
+  var FREE_TASTE_HOST = 'free-ai-taste.onetap-ai.workers.dev';
   var FREE_TASTE_ENDPOINT = 'https://' + FREE_TASTE_HOST + '/v1/generate';
   var FREE_TASTE_PROMPT_LIMIT = 2000;
   var FREE_TASTE_TIMEOUT = 45000;
