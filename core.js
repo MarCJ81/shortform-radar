@@ -820,6 +820,213 @@
     ].join('\n');
   }
 
+  /* ---------- 레퍼런스 저장(분석팩 · 썸네일 · yt-dlp) ---------- */
+  const THUMB_QUALITIES = ['maxresdefault', 'sddefault', 'hqdefault', 'mqdefault', 'default'];
+  const PACK_NOTE = '정적 웹앱(CORS·플랫폼 약관)에서는 원본 MP4를 브라우저로 직접 내려받을 수 없습니다. ' +
+    '썸네일·분석팩은 바로 저장되고, 원본은 아래 yt-dlp 명령을 PC 터미널에 붙여넣으면 저장됩니다.';
+
+  function youtubeVideoId(item) {
+    if (!item) return '';
+    const direct = String(item.videoId || '').trim();
+    if (/^[A-Za-z0-9_-]{6,20}$/.test(direct)) return direct;
+    const fromUrl = String(item.url || '')
+      .match(/(?:youtube\.com\/(?:shorts|embed|live)\/|youtu\.be\/|[?&]v=)([A-Za-z0-9_-]{6,20})/);
+    if (fromUrl) return fromUrl[1];
+    const fromThumb = String(item.thumbnail || '').match(/\/vi\/([A-Za-z0-9_-]{6,20})\//);
+    return fromThumb ? fromThumb[1] : '';
+  }
+
+  function youtubeThumbUrl(item, quality) {
+    const id = youtubeVideoId(item);
+    if (!id) return '';
+    const q = THUMB_QUALITIES.indexOf(quality) === -1 ? 'hqdefault' : quality;
+    return 'https://i.ytimg.com/vi/' + id + '/' + q + '.jpg';
+  }
+
+  function youtubeThumbUrls(item) {
+    const id = youtubeVideoId(item);
+    if (!id) return [];
+    return THUMB_QUALITIES.map((q) => ({
+      quality: q,
+      url: 'https://i.ytimg.com/vi/' + id + '/' + q + '.jpg',
+    }));
+  }
+
+  function ytdlpCommand(url) {
+    const u = String(url || '').trim();
+    if (!u || u.length > 500) return '';
+    return 'yt-dlp -f "bv*+ba/b" --merge-output-format mp4 "' + u.replace(/"/g, '%22') + '"';
+  }
+
+  function fileSlug(text, max) {
+    const s = String(text === undefined || text === null ? '' : text)
+      .replace(/[\\/:*?"<>|#]/g, ' ')
+      .replace(/[\r\n\t]+/g, ' ')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^[.\-]+/, '')
+      .replace(/[.\-]+$/, '');
+    return s.slice(0, max || 24);
+  }
+
+  /** 다운로드 파일명: 떡상레이더_크리에이터_제목.ext (사람이 알아보게, 경로 문자 제거) */
+  function packFilename(item, ext, opts) {
+    const o = opts || {};
+    const it = item || {};
+    const handle = fileSlug(String(it.creator || '').replace(/^@/, ''), 20);
+    const title = fileSlug(shortCaption(it), o.titleMax || 24);
+    const base = [handle, title].filter(Boolean).join('_') || fileSlug(String(it.id || 'reference'), 24) || 'reference';
+    return '떡상레이더_' + base + '.' + (ext || 'txt');
+  }
+
+  function packStamp(ms) {
+    const d = new Date((ms || Date.now()) + 9 * 3600000);
+    const p = (n) => (n < 10 ? '0' + n : String(n));
+    return d.getUTCFullYear() + '-' + p(d.getUTCMonth() + 1) + '-' + p(d.getUTCDate()) + ' ' +
+      p(d.getUTCHours()) + ':' + p(d.getUTCMinutes()) + ' (KST)';
+  }
+
+  const TIER_LABEL = { epic: '초대형', hot: '핫', warm: '상승', calm: '평범', pending: '미확인' };
+
+  /**
+   * 선택한 영상 하나를 TXT·JSON 분석팩으로 만든다.
+   * 제목·크리에이터·플랫폼·조회수·바이럴 배수·훅·대본/구성·해시태그·원본 URL을 모두 담는다.
+   */
+  function buildReferencePack(item, opts) {
+    const o = opts || {};
+    const now = o.nowMs || Date.now();
+    const m = computeMetrics(item, now);
+    const hook = buildHookAnalysis(item);
+    const title = shortCaption(item) || itemTitle(item) || '제목 없음';
+    const platformLabel = PLATFORM_LABEL[item.platform] || item.platform || '—';
+    const hashtags = (item.hashtags || []).slice();
+    const videoId = youtubeVideoId(item);
+    const thumb = youtubeThumbUrl(item, 'maxresdefault');
+    const url = String(item.url || '');
+    const command = ytdlpCommand(url);
+    const tier = m.pending ? 'pending' : m.tier;
+    const tierText = TIER_LABEL[tier] || '';
+    const script = buildScript(item, { product: o.product });
+
+    const data = {
+      app: '떡상 레이더',
+      kind: 'reference-pack',
+      version: 1,
+      generatedAt: new Date(now).toISOString(),
+      reference: {
+        id: item.id || '',
+        title: title,
+        caption: shortCaption(item),
+        creator: item.creator || '',
+        creatorName: item.creatorName || '',
+        platform: item.platform || '',
+        platformLabel: platformLabel,
+        country: item.country || '',
+        category: item.category || '',
+        hashtags: hashtags,
+        postedAt: item.postedAt || '',
+        durationSec: item.durationSec || 0,
+        url: url,
+        videoId: videoId,
+        thumbnailUrl: thumb,
+        product: item.product ? {
+          name: item.product.name || '',
+          price: item.product.price || 0,
+          gmv: item.product.gmv || null,
+          channel: item.product.channel || '',
+        } : null,
+      },
+      metrics: {
+        views: item.views === undefined ? null : item.views,
+        likes: item.likes === undefined ? null : item.likes,
+        comments: item.comments === undefined ? null : item.comments,
+        shares: item.shares === undefined ? null : item.shares,
+        saves: item.saves === undefined ? null : item.saves,
+        avgViews: item.avgViews === undefined ? null : item.avgViews,
+        subscribers: item.subscribers === undefined ? null : item.subscribers,
+        viralMultiple: m.viralMultiple,
+        vph: m.vph,
+        engagementRate: m.engagementRate,
+        score: m.score,
+        tier: tier,
+        tierLabel: tierText,
+        basis: item.baselineBasis || '',
+      },
+      hook: {
+        type: item.hookType || '',
+        text: hook.hookText,
+        formula: hook.lib.formula,
+        why: hook.lib.why,
+        beats: hook.beats,
+      },
+      script: script,
+      assets: {
+        cardPng: { width: 1080, height: 1920, note: '앱의 PNG 저장 버튼 → 9:16 요약 카드' },
+        youtubeThumbnail: thumb || null,
+      },
+      download: {
+        method: url ? 'yt-dlp' : '',
+        command: command,
+        note: PACK_NOTE,
+      },
+    };
+
+    const lines = [];
+    lines.push('떡상 레이더 · 레퍼런스 분석팩');
+    lines.push('생성 ' + packStamp(now));
+    lines.push('────────────────────────────────────────');
+    lines.push('[기본 정보]');
+    lines.push('제목: ' + title);
+    lines.push('크리에이터: ' + (item.creator || '—') + (item.creatorName && item.creatorName !== item.creator ? ' (' + item.creatorName + ')' : ''));
+    lines.push('플랫폼: ' + platformLabel + (item.country ? ' · ' + item.country : ''));
+    lines.push('카테고리: ' + (item.category || '—'));
+    lines.push('게시: ' + (item.postedAt ? packStamp(Date.parse(item.postedAt)) + ' · ' + relativeTime(item.postedAt, now) : '—'));
+    lines.push('길이: ' + (item.durationSec ? item.durationSec + '초' : '—'));
+    lines.push('해시태그: ' + (hashtags.length ? hashtags.join(' ') : '없음'));
+    lines.push('원본: ' + (url || '(데모 카드 — 원본 링크 없음)'));
+    lines.push('');
+    lines.push('[성과 지표]');
+    lines.push('조회수: ' + (m.pending ? '미확인' : formatCount(item.views)) +
+      ' · 좋아요: ' + (m.pending ? '미확인' : formatCount(item.likes || 0)) +
+      ' · 댓글: ' + (m.pending ? '미확인' : formatCount(item.comments || 0)));
+    lines.push('채널 평균: ' + formatCount(item.avgViews || 0) + ' · 바이럴 배수: ' + (m.pending ? '미확인' : formatMultiple(m.viralMultiple)) +
+      (item.baselineBasis && BASIS_LABEL[item.baselineBasis] ? ' (' + BASIS_LABEL[item.baselineBasis] + ')' : ''));
+    lines.push('VPH: ' + (m.pending ? '미확인' : formatVph(m.vph)) + ' · 참여율: ' + (m.pending ? '미확인' : formatPercent(m.engagementRate)));
+    lines.push('떡상 점수: ' + (m.pending ? '미확인' : m.score + '/100') + (tierText ? ' (' + tierText + ')' : ''));
+    lines.push('');
+    lines.push('[첫 3초 훅]');
+    lines.push('유형: ' + (item.hookType || '—'));
+    lines.push('문구: ' + (hook.hookText || '—'));
+    lines.push('공식: ' + hook.lib.formula);
+    lines.push('왜 먹히나: ' + hook.lib.why);
+    lines.push('');
+    lines.push('[영상 구성 5비트]');
+    hook.beats.forEach((b) => lines.push(b.range + ' | ' + b.role + ' | ' + b.text));
+    lines.push('');
+    lines.push('[바로 쓰는 대본 템플릿]');
+    lines.push(script);
+    lines.push('');
+    if (item.product) {
+      lines.push('[연결 상품]');
+      lines.push(item.product.name + ' · ' + formatCount(item.product.price) + '원' +
+        (item.product.gmv ? ' · 누적 GMV ' + formatCount(item.product.gmv) + '원' : ''));
+      lines.push('');
+    }
+    lines.push('[이미지 · 원본]');
+    lines.push('YouTube 썸네일: ' + (thumb || '없음 (YouTube 영상 ID 없음)'));
+    lines.push('카드 PNG: 앱의 PNG 저장 → 1080×1920 9:16 레퍼런스 요약 카드');
+    lines.push('원본 내려받기: ' + (command || '원본 링크 없음'));
+    lines.push('');
+    lines.push('※ ' + PACK_NOTE);
+
+    return {
+      txt: lines.join('\n') + '\n',
+      json: JSON.stringify(data, null, 2),
+      data: data,
+      files: { txt: packFilename(item, 'txt', o), json: packFilename(item, 'json', o) },
+    };
+  }
+
   /* ---------- quota ---------- */
   function quotaDateKey(nowMs) {
     // YouTube quota resets at midnight Pacific (UTC-8 standard time).
@@ -1161,6 +1368,8 @@
     psychSourceText, psychProfile, psychInputFor, psychFramework, psychRewrite,
     frameworkText, psychFrameworkText, buildBridgePrompt, scriptMeta,
     PSY_AUDIENCE, PSY_PROBLEM, PSY_SOLUTION,
+    youtubeVideoId, youtubeThumbUrl, youtubeThumbUrls, ytdlpCommand,
+    packFilename, packStamp, buildReferencePack, PACK_NOTE,
     countChars,
     quotaDateKey, bumpQuota, summarize, itemTitle, isPending,
   };

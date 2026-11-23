@@ -94,6 +94,7 @@
       chevron: '<path d="M7.6 4.8L12.8 10l-5.2 5.2"/>',
       trash: '<path d="M4.6 6.4h10.8M8 6.4V4.6h4v1.8M6.4 6.4l.6 9h6l.6-9"/>',
       check: '<path d="M4.6 10.4l3.4 3.4 7.4-7.4"/>',
+      download: '<path d="M10 3.4v9.2M6.2 9.2l3.8 3.8 3.8-3.8M4.4 15.8h11.2"/>',
     };
     return '<svg viewBox="0 0 20 20" width="' + s + '" height="' + s + '" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' + (paths[name] || '') + '</svg>';
   }
@@ -142,6 +143,190 @@
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+
+  function downloadBlob(filename, blob) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+
+  /* ---------- 9:16 레퍼런스 요약 카드 (SVG → PNG) ---------- */
+  const CARD_W = 1080;
+  const CARD_H = 1920;
+  const TIER_COLOR = { epic: '#FF3B5C', hot: '#FF5A1F', warm: '#2F5BFF', calm: '#8A8F96', pending: '#5B6270' };
+
+  function wrapLines(text, maxChars, maxLines) {
+    const words = String(text || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+    const lines = [];
+    let cur = '';
+    const flush = () => { if (cur) { lines.push(cur); cur = ''; } };
+    words.forEach((word) => {
+      let w = word;
+      while (w.length > maxChars) {
+        flush();
+        lines.push(w.slice(0, maxChars));
+        w = w.slice(maxChars);
+      }
+      if (!w) return;
+      if (!cur) cur = w;
+      else if (cur.length + 1 + w.length <= maxChars) cur += ' ' + w;
+      else { flush(); cur = w; }
+    });
+    flush();
+    return lines.slice(0, maxLines || 3);
+  }
+
+  function buildReferenceCardSVG(item) {
+    const m = C.computeMetrics(item, state.now);
+    const tier = m.pending ? 'pending' : m.tier;
+    const accent = TIER_COLOR[tier] || TIER_COLOR.calm;
+    const platform = C.PLATFORM_LABEL[item.platform] || item.platform || '레퍼런스';
+    const multiple = m.pending ? '미확인' : C.formatMultiple(m.viralMultiple);
+    const titleLines = wrapLines(C.itemTitle(item), 17, 3);
+    const hookLines = wrapLines(item.hookText || '', 26, 2);
+    const tags = (item.hashtags || []).slice(0, 3).join(' ');
+    const stats = [
+      [m.pending ? '—' : nf(item.views), '조회수'],
+      [multiple, '바이럴 배수'],
+      [m.pending ? '—' : C.formatVph(m.vph), 'VPH'],
+      [m.pending ? '—' : String(m.score), '떡상 점수'],
+    ];
+    const cover = coverSVG(item).replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '');
+    const footer = item.url
+      ? String(item.url).replace(/^https?:\/\/(www\.)?/, '').slice(0, 46)
+      : '데모 레퍼런스 · 원본 링크 없음';
+
+    return '<svg xmlns="http://www.w3.org/2000/svg" width="' + CARD_W + '" height="' + CARD_H + '" viewBox="0 0 ' + CARD_W + ' ' + CARD_H + '">' +
+      '<style>' +
+      'text{font-family:\'PlexKR\',\'Noto Sans KR\',\'Apple SD Gothic Neo\',\'Malgun Gothic\',sans-serif}' +
+      '.cover-text{font-weight:800;letter-spacing:-0.03em}' +
+      '</style>' +
+      '<defs>' +
+      '<linearGradient id="cardFade" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0" stop-color="#08090C" stop-opacity="0"/><stop offset=".55" stop-color="#08090C" stop-opacity=".92"/><stop offset="1" stop-color="#08090C" stop-opacity=".98"/></linearGradient>' +
+      '<linearGradient id="cardTop" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0" stop-color="#08090C" stop-opacity=".62"/><stop offset="1" stop-color="#08090C" stop-opacity="0"/></linearGradient>' +
+      '</defs>' +
+      '<rect width="' + CARD_W + '" height="' + CARD_H + '" fill="#0B0C0E"/>' +
+      '<g transform="scale(' + (CARD_W / 372) + ')">' + cover + '</g>' +
+      '<rect width="' + CARD_W + '" height="300" fill="url(#cardTop)"/>' +
+      '<rect y="820" width="' + CARD_W + '" height="' + (CARD_H - 820) + '" fill="url(#cardFade)"/>' +
+      '<text x="56" y="86" font-size="30" font-weight="800" fill="#FFFFFF" fill-opacity=".95">떡상 레이더</text>' +
+      '<text x="56" y="118" font-size="17" letter-spacing="3.2" fill="#FFFFFF" fill-opacity=".55">SHORTFORM RADAR · REFERENCE CARD</text>' +
+      '<g><rect x="812" y="52" width="212" height="66" rx="16" fill="' + accent + '"/>' +
+      '<text x="918" y="98" text-anchor="middle" font-size="' + (m.pending ? 30 : 40) + '" font-weight="800" fill="#FFFFFF">' + esc(multiple) + '</text></g>' +
+      '<rect x="56" y="1128" width="76" height="7" rx="3.5" fill="' + accent + '"/>' +
+      '<text x="56" y="1178" font-size="27" font-weight="600" fill="#FFFFFF" fill-opacity=".82">' +
+      esc(platform + (item.country ? ' · ' + item.country : '') + ' · ' + (item.category || '')) + '</text>' +
+      titleLines.map((line, i) => '<text x="56" y="' + (1258 + i * 70) + '" font-size="56" font-weight="800" letter-spacing="-1.4" fill="#FFFFFF">' + esc(line) + '</text>').join('') +
+      (hookLines.length ? '<text x="56" y="1492" font-size="24" font-weight="700" fill="' + accent + '">첫 3초 훅 · ' + esc(item.hookType || '') + '</text>' +
+        hookLines.map((line, i) => '<text x="56" y="' + (1536 + i * 46) + '" font-size="34" fill="#FFFFFF" fill-opacity=".78">“' + esc(line) + '”</text>').join('') : '') +
+      '<g>' + stats.map((s, i) => (
+        '<text x="' + (56 + i * 252) + '" y="1700" font-size="44" font-weight="800" fill="#FFFFFF">' + esc(s[0]) + '</text>' +
+        '<text x="' + (56 + i * 252) + '" y="1738" font-size="22" fill="#FFFFFF" fill-opacity=".52">' + esc(s[1]) + '</text>'
+      )).join('') + '</g>' +
+      (tags ? '<text x="56" y="1806" font-size="26" fill="#FFFFFF" fill-opacity=".7">' + esc(tags) + '</text>' : '') +
+      '<text x="56" y="1872" font-size="22" font-weight="700" fill="#FFFFFF" fill-opacity=".45">떡상 레이더</text>' +
+      '<text x="1024" y="1872" text-anchor="end" font-size="20" fill="#FFFFFF" fill-opacity=".38">' + esc(footer) + '</text>' +
+      '</svg>';
+  }
+
+  function svgToPngBlob(svg, width, height) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const timer = setTimeout(() => reject(new Error('svg timeout')), 8000);
+      img.onload = () => {
+        clearTimeout(timer);
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#0B0C0E';
+          ctx.fillRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
+          canvas.toBlob((blob) => {
+            if (blob && blob.size) resolve(blob);
+            else reject(new Error('toBlob'));
+          }, 'image/png');
+        } catch (err) { reject(err); }
+      };
+      img.onerror = () => { clearTimeout(timer); reject(new Error('svg load')); };
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    });
+  }
+
+  function downloadReferenceCard(id) {
+    const item = findItem(id);
+    if (!item) return;
+    svgToPngBlob(buildReferenceCardSVG(item), CARD_W, CARD_H).then((blob) => {
+      downloadBlob(C.packFilename(item, 'png'), blob);
+      toast('9:16 레퍼런스 카드 PNG(1080×1920)를 저장했습니다.');
+    }).catch(() => {
+      toast('PNG 카드를 만들지 못했습니다. 잠시 후 다시 시도해 주세요.', 'warn');
+    });
+  }
+
+  function downloadReferencePack(id, kind) {
+    const item = findItem(id);
+    if (!item) return;
+    const pack = C.buildReferencePack(item, { nowMs: state.now });
+    if (kind === 'json') {
+      download(pack.files.json, pack.json, 'application/json;charset=utf-8');
+      toast('분석팩 JSON을 저장했습니다.');
+    } else {
+      download(pack.files.txt, pack.txt, 'text/plain;charset=utf-8');
+      toast('분석팩 TXT를 저장했습니다.');
+    }
+  }
+
+  function copySourceUrl(id) {
+    const item = findItem(id);
+    if (!item || !item.url) { toast('원본 링크가 없는 카드입니다.', 'warn'); return; }
+    copyText(item.url).then((ok) => toast(ok ? '원본 링크를 복사했습니다.' : '복사에 실패했습니다.'));
+  }
+
+  function copyYtdlp(id) {
+    const item = findItem(id);
+    const command = item ? C.ytdlpCommand(item.url) : '';
+    if (!command) { toast('원본 링크가 없는 카드입니다.', 'warn'); return; }
+    copyText(command).then((ok) => toast(ok ? 'yt-dlp 명령을 복사했습니다. PC 터미널에 붙여넣으세요.' : '복사에 실패했습니다.'));
+  }
+
+  function openYoutubeThumb(id) {
+    const item = findItem(id);
+    const url = item ? C.youtubeThumbUrl(item, 'maxresdefault') : '';
+    if (!url) { toast('YouTube 영상 ID가 없는 카드입니다.', 'warn'); return; }
+    const win = window.open(url, '_blank', 'noopener');
+    if (win) { try { win.opener = null; } catch (err) {} }
+    toast('썸네일을 새 창에서 열었습니다. 필요하면 우클릭 → 이미지 저장.');
+  }
+
+  async function downloadYoutubeThumb(id) {
+    const item = findItem(id);
+    const urls = item ? C.youtubeThumbUrls(item) : [];
+    if (!urls.length) { toast('YouTube 영상 ID가 없는 카드입니다.', 'warn'); return; }
+    for (let i = 0; i < urls.length; i++) {
+      try {
+        const res = await fetch(urls[i].url, { mode: 'cors', credentials: 'omit', cache: 'no-store' });
+        if (!res.ok) continue;
+        const blob = await res.blob();
+        if (!blob.size) continue;
+        downloadBlob(C.packFilename(item, 'jpg'), blob);
+        toast('YouTube 썸네일(' + urls[i].quality + ')을 저장했습니다.');
+        return;
+      } catch (err) { /* 다음 화질 시도 */ }
+    }
+    const win = window.open(urls[0].url, '_blank', 'noopener');
+    if (win) { try { win.opener = null; } catch (err) {} }
+    toast('이미지 저장이 막혀 새 창으로 열었습니다. 우클릭 → 이미지 저장을 해주세요.', 'warn');
   }
 
   function debounce(fn, ms) {
@@ -261,6 +446,7 @@
       '<div class="card-actions">' +
       '<button type="button" class="btn ' + (saved ? 'is-on' : 'btn-ghost') + '" data-action="toggle-save" data-id="' + esc(item.id) + '" aria-pressed="' + saved + '">' + icon('bookmark', 13) + '<span>' + (saved ? '저장됨' : '보드 저장') + '</span></button>' +
       '<button type="button" class="btn btn-ghost" data-action="open-hook" data-id="' + esc(item.id) + '">' + icon('spark', 13) + '<span>훅 분석</span></button>' +
+      '<button type="button" class="btn btn-ghost" data-action="download-card-png" data-id="' + esc(item.id) + '" title="9:16 레퍼런스 카드 PNG 저장" aria-label="레퍼런스 카드 PNG 저장">' + icon('download', 13) + '<span>PNG</span></button>' +
       '</div>' +
       '<div class="kpis">' +
       kpi('heart', '좋아요', m.pending ? '—' : nf(item.likes), '') +
@@ -517,6 +703,8 @@
       '<button class="kbtn" data-action="kcard-prev" data-id="' + esc(item.id) + '" title="이전 단계">←</button>' +
       '<button class="kbtn" data-action="kcard-next" data-id="' + esc(item.id) + '" title="다음 단계">→</button>' +
       '<button class="kbtn" data-action="kcard-memo" data-id="' + esc(item.id) + '">메모</button>' +
+      '<button class="kbtn" data-action="download-card-png" data-id="' + esc(item.id) + '" title="9:16 레퍼런스 카드 PNG 저장">PNG</button>' +
+      '<button class="kbtn" data-action="download-pack-txt" data-id="' + esc(item.id) + '" title="분석팩 TXT 저장">TXT</button>' +
       '<button class="kbtn" data-action="kcard-remove" data-id="' + esc(item.id) + '" title="보드에서 빼기">✕</button>' +
       '</div></div></div>';
   }
@@ -894,6 +1082,23 @@
   }
 
   /* ---------- detail ---------- */
+  function downloadPanelHTML(item) {
+    const videoId = C.youtubeVideoId(item);
+    const btn = (action, label, iconName) => '<button type="button" class="btn btn-ghost btn-sm" data-action="' + action + '" data-id="' + esc(item.id) + '">' +
+      icon(iconName || 'download', 12) + '<span>' + esc(label) + '</span></button>';
+    return '<div class="dl-panel">' +
+      btn('download-card-png', 'PNG 카드 1080×1920') +
+      btn('download-pack-txt', '분석팩 TXT') +
+      btn('download-pack-json', '분석팩 JSON') +
+      (item.url ? btn('copy-source-url', '원본 링크 복사', 'copy') : '') +
+      (item.url ? btn('copy-ytdlp', 'yt-dlp 명령 복사', 'copy') : '') +
+      (videoId ? btn('open-youtube-thumb', '썸네일 열기', 'external') : '') +
+      (videoId ? btn('download-youtube-thumb', '썸네일 저장', 'download') : '') +
+      '</div>' +
+      '<p class="form-note" style="margin-top:8px">정적 웹앱(CORS·플랫폼 약관)이라 원본 MP4는 브라우저에서 바로 저장할 수 없습니다. 썸네일·분석팩은 즉시 저장되고, 원본은 <b>yt-dlp 명령</b>을 PC 터미널에 붙여넣으면 받아집니다.</p>' +
+      (!item.url ? '<p class="form-note">데모 카드에는 원본 URL이 없어 링크·yt-dlp 복사와 실제 썸네일은 실시간 수집 카드에서 쓸 수 있습니다.</p>' : '');
+  }
+
   function openDetail(id) {
     const item = findItem(id);
     if (!item) return;
@@ -939,6 +1144,9 @@
       '<div class="dstat"><b>' + (m.pending ? '—' : nf(item.comments)) + '</b><span>댓글</span></div>' +
       '<div class="dstat"><b>' + (m.pending ? '—' : C.formatPercent(m.engagementRate)) + '</b><span>참여율</span></div>' +
       '</div>' +
+
+      '<div class="sec-title">레퍼런스 저장<span class="line"></span></div>' +
+      downloadPanelHTML(item) +
 
       (m.pending ? pendingForm(item) : scoreBlock(item, m)) +
 
@@ -1470,6 +1678,13 @@
         break;
       }
       case 'open-hook': openDetail(id); break;
+      case 'download-card-png': downloadReferenceCard(id); break;
+      case 'download-pack-txt': downloadReferencePack(id, 'txt'); break;
+      case 'download-pack-json': downloadReferencePack(id, 'json'); break;
+      case 'copy-source-url': copySourceUrl(id); break;
+      case 'copy-ytdlp': copyYtdlp(id); break;
+      case 'open-youtube-thumb': openYoutubeThumb(id); break;
+      case 'download-youtube-thumb': downloadYoutubeThumb(id); break;
       case 'toggle-save': {
         e.stopPropagation();
         toggleSave(id);
