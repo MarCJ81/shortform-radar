@@ -77,6 +77,11 @@
       <div class="summary" id="summary"></div>
     </div>
     <div class="source-note" id="sourceNote"></div>
+    <details class="panel dist-panel" id="distPanel" open>
+      <summary class="panel-head"><h2>바이럴 배수 분포</h2><span class="muted" id="distMeta">중앙값·사분위 기준</span></summary>
+      <div class="dist-chart-wrap"><canvas id="distChart" height="168" role="img" aria-label="바이럴 배수 분포 막대그래프"></canvas></div>
+      <p class="dist-note" id="distNote"></p>
+    </details>
     <div class="grid" id="grid" aria-live="polite"></div>
     <div class="empty" id="empty" hidden>
       <p><strong>조건에 맞는 영상이 없습니다.</strong></p>
@@ -179,6 +184,12 @@
 
 <script src="engines/copy-psych-engine.js"></script>
 <script src="engines/ai-bridge.js"></script>
+<!-- 오픈소스 엔진: PapaParse(MIT) CSV · simple-statistics(ISC) 분포 · Chart.js(MIT) 그래프 -->
+<script src="assets/vendor/papaparse.min.js"></script>
+<script src="assets/vendor/simple-statistics.min.js"></script>
+<script src="assets/vendor/chart.umd.min.js"></script>
+<script src="engines/stats-engine.js"></script>
+<script src="engines/pro-api-connector.js"></script>
 <script src="core.js"></script>
 <script src="data.js"></script>
 <script src="app.js"></script>

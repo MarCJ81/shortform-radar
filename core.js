@@ -400,7 +400,7 @@
   }
 
   /* ---------- CSV ---------- */
-  function parseCsv(text) {
+  function parseCsvBuiltin(text) {
     const src = String(text || '').replace(/^\uFEFF/, '');
     const rows = [];
     let row = [];
@@ -425,6 +425,63 @@
     row.push(field);
     if (row.length > 1 || row[0] !== '') rows.push(row);
     return rows;
+  }
+
+  /**
+   * 공용 통계·CSV 엔진(engines/stats-engine.js: PapaParse·simple-statistics).
+   * 페이지에서 window.RadarStats 를 넣어 주면 그 엔진으로 파싱·통계를 낸다.
+   * 없으면 아래 내장 구현으로 그대로 동작한다(기존 동작 보존).
+   */
+  let STATS = null;
+  function useStats(engine) {
+    STATS = engine && typeof engine.parseCsv === 'function' ? engine : null;
+    return !!STATS;
+  }
+  function statsEngine() { return STATS; }
+
+  function parseCsv(text) {
+    if (STATS && typeof STATS.parseCsv === 'function') {
+      try { return STATS.parseCsv(text); } catch (e) { /* 내장으로 폴백 */ }
+    }
+    return parseCsvBuiltin(text);
+  }
+
+  /** 배수 배열과 분포 요약. 차트·이상치 표시에 쓴다. */
+  function multiplesOf(items, now) {
+    const out = [];
+    (items || []).forEach((it) => {
+      const m = computeMetrics(it, now);
+      if (m && !m.pending && typeof m.viralMultiple === 'number' && m.viralMultiple > 0) out.push(m.viralMultiple);
+    });
+    return out;
+  }
+
+  function distributionOf(items, now, opts) {
+    const values = multiplesOf(items, now);
+    if (!values.length) return { values, stats: null, histogram: null };
+    if (STATS && typeof STATS.statsOf === 'function') {
+      const stats = STATS.statsOf(values);
+      return {
+        values,
+        stats,
+        histogram: typeof STATS.histogram === 'function' ? STATS.histogram(values, opts) : null,
+        summary: typeof STATS.summaryKo === 'function' ? STATS.summaryKo(stats) : '',
+      };
+    }
+    // 엔진이 없을 때를 위한 최소 통계(기존 화면이 비지 않게)
+    const arr = values.slice().sort((a, b) => a - b);
+    const med = median(arr);
+    const mean = arr.reduce((s, v) => s + v, 0) / arr.length;
+    const sd = arr.length > 1 ? Math.sqrt(arr.reduce((s, v) => s + (v - mean) * (v - mean), 0) / (arr.length - 1)) : 0;
+    const stats = { n: arr.length, mean, median: med, sd, min: arr[0], max: arr[arr.length - 1], outliers: [] };
+    return { values, stats, histogram: null, summary: '중앙값 ' + formatMultiple(med) + ' · ' + arr.length + '건' };
+  }
+
+  function zScoreOf(value, items, now) {
+    const d = distributionOf(items, now);
+    if (!d.stats || !(d.stats.sd > 0)) return 0;
+    if (STATS && typeof STATS.zScore === 'function') return STATS.zScore(value, d.stats);
+    return (Number(value) - d.stats.mean) / d.stats.sd;
   }
 
   function normalizeNumber(v) {
@@ -1361,7 +1418,8 @@
     searchItems, filterItems, sortItems, visibleItems,
     median, channelBaseline, BASIS_LABEL,
     parseVideoUrl, parseISODuration, guessCategory,
-    parseCsv, normalizeNumber, csvToItems, coverLines,
+    parseCsv, parseCsvBuiltin, normalizeNumber, csvToItems, coverLines,
+    useStats, statsEngine, multiplesOf, distributionOf, zScoreOf,
     csvEscape, toCsv, boardRows, toBoardCsv, toRadarCsv,
     normalizeStatus, nextStatus, prevStatus, boardGroups,
     hookLibrary, hookStats, buildHookAnalysis, buildScript, buildPrompt,

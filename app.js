@@ -8,6 +8,10 @@
   const C = window.RadarCore;
   const D = window.RadarData;
   const B = window.AiBridge || null;     // engines/ai-bridge.js (카피 심리학 엔진은 core.js가 감싼다)
+  const S = window.RadarStats || null;   // engines/stats-engine.js (PapaParse·simple-statistics·Chart.js)
+  const Pro = window.ProConnector || null; // engines/pro-api-connector.js (무료 AI 맛보기·Pro 연결)
+  if (S && C.useStats) C.useStats(S);
+  const FREE_APP = 'shortform-radar';
   const $ = (sel, root) => (root || document).querySelector(sel);
   const $$ = (sel, root) => Array.prototype.slice.call((root || document).querySelectorAll(sel));
 
@@ -49,6 +53,8 @@
     geminiKey: store.get(KEY.geminiKey, '') || '',
     geminiModel: store.get(KEY.geminiModel, '') || '',
     geminiBusy: false,
+    freeBusy: false,
+    freeQuota: null,
     drafts: {},
     theme: store.get(KEY.theme, 'light') === 'dark' ? 'dark' : 'light',
     filters: { platform: 'all', country: 'all', minMultiple: 0, period: 0, category: 'all', collectedOnly: false },
@@ -549,8 +555,7 @@
 
   function renderGrid() {
     const items = C.visibleItems(allItems(), state, state.now);
-    $('#grid').innerHTML = items.map((i) => cardHTML(i)).join('');
-    const empty = items.length === 0;
+    $('#grid').innerHTML = items.map((i) => cardHTML(i)).join('');    const empty = items.length === 0;
     if (empty) {
       const hint = $('#empty .muted');
       if (hint) {
@@ -561,6 +566,41 @@
     }
     $('#empty').hidden = !empty;
     $('#grid').hidden = empty;
+    renderDistribution(items);
+  }
+
+  /**
+   * 바이럴 배수 분포 — simple-statistics 중앙값·사분위·표준편차 + Chart.js 히스토그램.
+   * PapaParse 가 CSV 를 파싱한 결과도 같은 배수 계산을 거치므로 카드와 그래프가 일치한다.
+   */
+  function renderDistribution(items) {
+    const panel = $('#distPanel');
+    if (!panel) return;
+    const canvas = $('#distChart');
+    const note = $('#distNote');
+    const meta = $('#distMeta');
+    const d = C.distributionOf(items, state.now);
+    if (!d.stats || d.values.length < 3) {
+      panel.hidden = true;
+      if (S && canvas) S.destroy('distChart');
+      return;
+    }
+    panel.hidden = false;
+    const st = d.stats;
+    if (meta) meta.textContent = d.values.length + '건 · ' + (d.summary || '');
+    if (note) {
+      const n = st.n;
+      note.textContent = '평균은 한 편의 대박에 끌려갑니다. 그래서 정렬과 판단은 중앙값 ' + C.formatMultiple(st.median) +
+        ' 기준으로 보세요. 상자 밖(Q3 + 1.5×IQR = ' + C.formatMultiple(st.upperFence) + 'x 이상)이 이상치 ' + st.outliers.length +
+        '건' + (n ? ' · 표준편차 ' + C.formatMultiple(st.sd) : '') +
+        (st.sd > 0 ? ' · 가장 튄 영상 z +' + (Math.round(((st.max - st.mean) / st.sd) * 10) / 10) : '') + '입니다.';
+    }
+    if (!S || !S.drawDistribution || !canvas) { if (note) note.textContent += ' (Chart.js를 불러오지 못해 그래프는 생략합니다.)'; return; }
+    try {
+      S.drawDistribution(canvas, d.values, { label: '영상 수' });
+    } catch (e) {
+      if (note) note.textContent += ' (그래프를 그리지 못했습니다.)';
+    }
   }
 
   function updateTabBadge() {
@@ -940,6 +980,12 @@
         '<button type="button" class="btn btn-ghost btn-sm bridge-btn" data-action="bridge-open" data-provider="' + esc(l.id) + '" data-prefix="' + p + '" data-id="' + esc(item.id) + '" title="' + esc(l.note) + '">' +
         esc(l.label) + ' 열기<span class="b-tag' + (l.prefilled ? '' : ' paste') + '">' + (l.prefilled ? '자동 입력' : '붙여넣기') + '</span></button>'
       )).join('') + '</div>' +
+      '<div class="bridge-free">' +
+        '<button type="button" class="btn btn-primary btn-sm" data-action="free-generate" data-prefix="' + p + '" data-id="' + esc(item.id) + '"' + (Pro ? '' : ' disabled') + '>' +
+          icon('bolt', 12) + ' 키 없이 무료로 생성</button>' +
+        '<p class="form-note" id="freeStatus-' + p + '">키를 넣지 않아도 하루 몇 회(기기 기준) 바로 받아 볼 수 있습니다. 다 쓰면 내 무료 Gemini 키로 이어집니다.</p>' +
+        '<div id="freeCard-' + p + '"></div>' +
+      '</div>' +
       '<p class="form-note">제목·조회수·바이럴 배수·훅 분해·심리 진단을 묶은 프롬프트 <b>' + C.countChars(prompt) + '자</b>. 버튼을 누르면 클립보드에 복사하고 새 창을 엽니다. ChatGPT·Claude는 입력창에 채워지고, Gemini는 열린 창에 붙여넣으면 됩니다.</p>' +
       '<details class="bridge-gemini"' + (state.geminiKey ? ' open' : '') + '>' +
         '<summary>무료 Gemini API 키로 여기서 바로 생성</summary>' +
@@ -1052,9 +1098,76 @@
     }
   }
 
+  /* ---------- 무료 AI 맛보기 (키 없이) ---------- */
+
+  function freeStatus(prefix, message, cls) {
+    const el = document.getElementById('freeStatus-' + (prefix || 'm'));
+    if (!el) return;
+    el.className = cls || 'form-note';
+    el.textContent = message;
+  }
+
+  function freeCard(prefix, res) {
+    const box = document.getElementById('freeCard-' + (prefix || 'm'));
+    if (!box || !Pro) return;
+    if (!res || !res.upgrade) { box.innerHTML = ''; return; }
+    const card = Pro.freeLimitCard(res);
+    box.innerHTML = '<div class="free-card">' +
+      '<b>' + esc(card.title) + '</b>' +
+      '<p>' + esc(card.body) + '</p>' +
+      '<a href="' + esc(card.primary.href) + '" target="_blank" rel="noopener noreferrer">' + esc(card.primary.label) + ' ↗</a>' +
+      (card.secondary.length ? '<ul>' + card.secondary.map((s) => '<li>' + esc(s.label) + '</li>').join('') + '</ul>' : '') +
+      '</div>';
+  }
+
+  /** 무료 AI 맛보기 서버로 이 영상의 30초 대본을 받는다. */
+  async function freeGenerate(prefix) {
+    const p = prefix || 'm';
+    if (!Pro) { freeStatus(p, '무료 AI 엔진을 불러오지 못했습니다. engines/pro-api-connector.js 를 확인하세요.', 'form-error'); return; }
+    if (state.freeBusy) return;
+    const box = document.getElementById('bridge-' + p);
+    if (!box) return;
+    const item = findItem(box.dataset.item);
+    if (!item) return;
+    const prompt = C.buildBridgePrompt(item, psyOverrides(p));
+    state.freeBusy = true;
+    const btn = box.querySelector('[data-action="free-generate"]');
+    if (btn) btn.disabled = true;
+    freeStatus(p, '무료 체험으로 생성 중… (10~30초)', 'form-note');
+    freeCard(p, null);
+    try {
+      const res = await Pro.generateFree({
+        task: 'text',
+        prompt: prompt,
+        system: '너는 한국 숏폼 대본 작가다. 요청한 형식만 그대로 출력하고 설명을 붙이지 않는다. 없는 수치를 만들지 않는다.',
+      }, { app: FREE_APP, truncate: true, timeoutMs: 45000 });
+      if (res.ok) {
+        const ta = document.getElementById('aiOut-' + p);
+        const bEl = document.getElementById('bridge-' + p);
+        if (bEl) draftFor(p, bEl.dataset.item).ai = res.text;
+        if (ta) { ta.value = res.text; ta.dataset.provider = '무료 체험 · ' + (res.engine || 'AI'); }
+        const meta = document.getElementById('aiMeta-' + p);
+        if (meta) meta.innerHTML = scriptMetaHTML(res.text);
+        state.freeQuota = res.quota || state.freeQuota;
+        const left = res.quota ? ' · 남은 ' + res.quota.remaining + '/' + res.quota.limit + '회' : '';
+        freeStatus(p, '무료 체험으로 대본을 받았습니다' + left + (res.truncated ? ' · 2,000자 제한으로 프롬프트 뒷부분을 줄였습니다' : '') + '. 아래 [내 대본으로 저장]을 누르세요.', 'form-ok');
+        toast('무료 체험으로 30초 대본을 받았습니다.');
+      } else if (res.upgrade) {
+        freeStatus(p, res.message, 'form-error');
+        freeCard(p, res);
+      } else {
+        freeStatus(p, res.message || '무료 체험에 실패했습니다.', 'form-error');
+      }
+    } catch (err) {
+      freeStatus(p, '무료 체험에 연결하지 못했습니다. 잠시 뒤 다시 시도해 주세요.', 'form-error');
+    } finally {
+      state.freeBusy = false;
+      if (btn) btn.disabled = false;
+    }
+  }
+
   /* ---------- modal base ---------- */
-  let lastFocus = null;
-  let detailId = null;
+  let lastFocus = null;  let detailId = null;
 
   function openModal(html, size, label) {
     lastFocus = document.activeElement;
@@ -1866,6 +1979,10 @@
       }
       case 'gemini-generate': {
         geminiGenerate(el.dataset.prefix || 'm');
+        break;
+      }
+      case 'free-generate': {
+        freeGenerate(el.dataset.prefix || 'm');
         break;
       }
       case 'save-ai-script': {

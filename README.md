@@ -226,3 +226,26 @@ test.js / uitest.py
 - 커머스 탭의 GMV·상품은 데모 시뮬레이션입니다. 실제 커머스 데이터는 상품 링크/가격을 직접 넣는 방식으로 확장할 수 있습니다.
 - 데이터는 브라우저에만 있으므로 브라우저 데이터를 지우면 사라집니다. `설정 → 전체 백업(JSON)`으로 보관하세요.
 - 데모 카드의 커버는 외부 이미지가 아닌 SVG 생성 이미지입니다(깨짐·저작권·외부 의존 0). 실제 수집 영상은 YouTube 썸네일을 사용합니다.
+
+## 오픈소스 엔진 · 무료 AI 맛보기 (2026-11-23 2차 업그레이드)
+
+| 파일 | 라이브러리 | 라이선스 | 하는 일 |
+| --- | --- | --- | --- |
+| `assets/vendor/papaparse.min.js` | PapaParse 5.4.1 | MIT | 따옴표·줄바꿈·BOM·구분자 자동 CSV 파싱 |
+| `assets/vendor/simple-statistics.min.js` | simple-statistics 7.8.7 | ISC | 중앙값·사분위·표준편차·z-score |
+| `assets/vendor/chart.umd.min.js` | Chart.js 4.4.6 | MIT | 바이럴 배수 분포 히스토그램 |
+| `engines/stats-engine.js` | (자체) | – | 위 셋을 묶어 `parseCsv`·`statsOf`·`histogram`·`drawDistribution` 제공 |
+
+- 레이더 화면에 **바이럴 배수 분포** 패널이 추가됐습니다. 평균은 대박 한 편에 끌려가므로, 그래프와 요약은
+  **중앙값·Q1·Q3·IQR·z-score** 기준으로 보여 줍니다(`core.js`의 `useStats`/`distributionOf`/`zScoreOf`).
+- 라이브러리가 없으면 같은 함수가 내장 계산으로 동작하고 그래프만 생략됩니다(기능이 깨지지 않음).
+- 라이선스 고지는 각 벤더 폴더의 `LICENSE-*.txt`에 그대로 들어 있습니다(MIT/ISC는 저작권 고지만 유지).
+
+### 무료 AI 맛보기 (키 없이)
+
+- `engines/pro-api-connector.js` v1.1.0의 `Pro.generateFree({task,prompt,system},{app})`로
+  **Cloudflare Worker**(`free-ai-taste`)를 호출합니다. 하루 몇 회(기기 기준)까지 글쓰기만.
+- `503 all_providers_busy` 는 1회 자동 재시도, `429 free_quota_exceeded·shared_network_limit·global_daily_cap`
+  은 서버의 한국어 안내 + **내 무료 Gemini 키(aistudio.google.com/apikey) / 구독 AI 브리지** 전환 카드로 보여 줍니다.
+- 무료 체험은 입력 2,000자 제한이 있어 프롬프트가 길면 `truncate:true`로 뒷부분을 줄이고 그 사실을 화면에 표시합니다.
+- 무료 경로는 외부 AI 제공자로 전송됩니다. 민감한 내용은 넣지 마세요(화면에도 안내).

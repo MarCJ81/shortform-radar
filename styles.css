@@ -1021,3 +1021,38 @@ label.flabel { display: block; font-size: 11px; font-weight: 700; color: var(--i
   .topbar, .filterbar, .card-actions, .footer { display: none; }
   .card { break-inside: avoid; }
 }
+
+/* ── 바이럴 배수 분포 (PapaParse + simple-statistics + Chart.js) ── */
+.dist-panel { margin: 16px 0 20px; padding: 16px 18px; }
+.dist-panel > summary { list-style: none; margin-bottom: 10px; cursor: pointer; }
+.dist-panel > summary::-webkit-details-marker { display: none; }
+.dist-panel > summary::after { content: '접기'; font-size: 10.5px; font-weight: 700; color: var(--ink-4); }
+.dist-panel:not([open]) > summary { margin-bottom: 0; }
+.dist-panel:not([open]) > summary::after { content: '펼치기'; }
+.dist-chart-wrap { position: relative; height: 178px; }
+.dist-note { margin-top: 9px; font-size: 11.5px; color: var(--ink-4); line-height: 1.6; }
+@media (max-width: 720px) {
+  .dist-panel { padding: 13px 14px; }
+  .dist-chart-wrap { height: 156px; }
+}
+
+/* ── 무료 AI 맛보기 ─────────────────────────────── */
+.bridge-free {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 10px 12px; border: 1px dashed var(--accent-line);
+  border-radius: var(--r-md); background: var(--accent-soft);
+}
+.bridge-free .btn { align-self: flex-start; }
+.bridge-free .form-note { color: var(--ink-3); }
+.free-card {
+  margin-top: 4px; padding: 10px 12px; border-radius: var(--r-md);
+  background: var(--surface); border: 1px solid var(--line);
+}
+.free-card b { display: block; font-size: 12px; font-weight: 800; margin-bottom: 4px; }
+.free-card p { font-size: 11.5px; color: var(--ink-2); line-height: 1.6; }
+.free-card a {
+  display: inline-block; margin-top: 6px; font-size: 11.5px; font-weight: 800;
+  color: var(--accent); text-decoration: none;
+}
+.free-card a:hover { text-decoration: underline; }
+.free-card ul { margin: 7px 0 0; padding-left: 16px; font-size: 11px; color: var(--ink-4); line-height: 1.6; }
