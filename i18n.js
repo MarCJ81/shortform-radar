@@ -711,9 +711,10 @@ window.__ONETAP_I18N_DICT__ = {
 "4. 보관과 삭제": "4. Retention and deletion",
 "5. 제3자 제공": "5. Third-party sharing",
 "6. 데모 데이터": "6. Demo data",
-"7. 문의": "7. Contact"
+"7. 문의": "7. Contact",
+"중앙값·사분위 기준": "Median and quartiles"
 };
-window.__ONETAP_I18N_RULES__ = [["유튜브", "YouTube"], ["틱톡", "TikTok"], ["인스타그램", "Instagram"], ["인스타", "Instagram"], ["(\\d+)\\s*시간 전", "$1h ago"], ["(\\d+)\\s*일 전", "$1d ago"], ["(\\d+)\\s*분 전", "$1m ago"], ["(\\d+)\\s*초 전", "$1s ago"], ["(\\d+)\\s*초", "$1s"], ["(\\d+)\\s*개", "$1"], ["(\\d+)\\s*건", "$1 items"], ["(\\d+)\\s*회", "$1 calls"], ["(\\d+)\\s*명", "$1 people"], ["(\\d+)\\s*점", "$1 pts"], ["(\\d+)\\s*자", "$1 chars"], ["조회수", "views"], ["구독자", "subscribers"], ["좋아요", "likes"], ["댓글", "comments"], ["^평균 ([\\d.]+)x$", "$1x average"], ["^데모 ([\\d.,]+)건 숨김?$", "$1 demo items hidden"], ["^떡상 점수 ([\\d.]+)$", "Breakout score $1"], ["^배수 ([\\d.]+)/([\\d.]+)$", "Multiple $1/$2"], ["^속도 ([\\d.]+)/([\\d.]+)$", "Speed $1/$2"], ["^반응 ([\\d.]+)/([\\d.]+)$", "Reactions $1/$2"], ["^신선도 ([\\d.]+)/([\\d.]+)$", "Freshness $1/$2"], ["^([\\d.,]+)자 진단 · 종합 ([\\d.]+)점 \\(([A-F])\\)$", "$1-character review · overall $2 pts ($3)"]];
+window.__ONETAP_I18N_RULES__ = [["^([\\d.,]+)건 · 중앙값 ([\\d.]+)x · ([\\d.,]+)건$", "$1 items · median $2x · $3 items"], ["^평균은 한 편의 대박에 끌려갑니다\\. 그래서 정렬과 판단은 중앙값 ([\\d.]+)x 기준으로 보세요\\. 상자 밖\\(Q3 \\+ 1\\.5×IQR = ([^ ]+) 이상\\)이 이상치 ([\\d.,]+)건 · 표준편차 ([\\d.]+)x · 가장 튄 영상 z ([+\\d.]+)입니다\\.( \\(Chart\\.js를 불러오지 못해 그래프는 생략합니다\\.\\))?$", "The average is dragged around by one blockbuster, so sorting and judgement here use the median of $1x. Anything outside the box (above Q3 + 1.5×IQR = $2) counts as an outlier: $3 items · SD $4x · most extreme video z $5.$6"], ["^평균 ([\\d.]+)x$", "$1x average"], ["^데모 ([\\d.,]+)건 숨김?$", "$1 demo items hidden"], ["^떡상 점수 ([\\d.]+)$", "Breakout score $1"], ["^배수 ([\\d.]+)/([\\d.]+)$", "Multiple $1/$2"], ["^속도 ([\\d.]+)/([\\d.]+)$", "Speed $1/$2"], ["^반응 ([\\d.]+)/([\\d.]+)$", "Reactions $1/$2"], ["^신선도 ([\\d.]+)/([\\d.]+)$", "Freshness $1/$2"], ["^([\\d.,]+)자 진단 · 종합 ([\\d.]+)점 \\(([A-F])\\)$", "$1-character review · overall $2 pts ($3)"], [" — 영상의 3단계만 따라 하면 오늘 바로 결과가 나옵니다", " — follow the three steps from the video and you get results today"], ["는 기능을 늘리는 대신 딱 하나에 집중했습니다\\. 영상의 3단계만 따라 하면 오늘 바로 결과가 나옵니다\\.", "skipped extra features and focused on one thing. Follow the three steps from the video and results show up today."], ["유튜브", "YouTube"], ["틱톡", "TikTok"], ["인스타그램", "Instagram"], ["인스타", "Instagram"], ["(\\d+)\\s*시간 전", "$1h ago"], ["(\\d+)\\s*일 전", "$1d ago"], ["(\\d+)\\s*분 전", "$1m ago"], ["(\\d+)\\s*초 전", "$1s ago"], ["(\\d+)\\s*초", "$1s"], ["(\\d+)\\s*개", "$1"], ["(\\d+)\\s*건", "$1 items"], ["(\\d+)\\s*회", "$1 calls"], ["(\\d+)\\s*명", "$1 people"], ["(\\d+)\\s*점", "$1 pts"], ["(\\d+)\\s*자", "$1 chars"], ["조회수", "views"], ["구독자", "subscribers"], ["좋아요", "likes"], ["댓글", "comments"]];
 (function(){var st=document.createElement("style");st.id="onetapLangCss";st.textContent="html[lang=\"en\"] .dist-panel > summary::after{content:'Collapse'}\nhtml[lang=\"en\"] .dist-panel:not([open]) > summary::after{content:'Expand'}\n";document.head.appendChild(st);})();
 /* OneTap i18n engine — Korean / English (auto-detect + manual switch)
    Dictionary is generated per app; text is translated in place, so no re-render is needed. */
@@ -821,6 +822,7 @@ window.__ONETAP_I18N_RULES__ = [["유튜브", "YouTube"], ["틱톡", "TikTok"], 
   var lang = 'ko';
   var textRecs = [];
   var attrRecs = [];
+  var valRecs = [];
   var applying = false;
   var observer = null;
 
@@ -856,13 +858,42 @@ window.__ONETAP_I18N_RULES__ = [["유튜브", "YouTube"], ["틱톡", "TikTok"], 
     var v = el.getAttribute(name);
     if (!v || !KO.test(v)) return;
     var out = translate(v);
-    if (out === null) { if (window.__I18N_LOG_MISS) (window.__I18N_MISS = window.__I18N_MISS || []).push(norm(v)); return; }
+    if (out === null || out === v) {
+      /* a label carrying a timecode: translate the timecode, drop the redundant label */
+      var m = v.match(/^(.*?)\s*([\d.]+)\s*초$/);
+      if (m) {
+        var headOut = translate(m[1]);
+        if (headOut === null) {
+          if (name === 'aria-label') { el.setAttribute(name, ''); }
+          return;
+        }
+        out = headOut + ' ' + m[2] + 's';
+      } else {
+        if (window.__I18N_LOG_MISS) (window.__I18N_MISS = window.__I18N_MISS || []).push(norm(v));
+        return;
+      }
+    }
     if (out === v) return;
     for (var i = 0; i < attrRecs.length; i++) {
       if (attrRecs[i].el === el && attrRecs[i].a === name) { attrRecs[i].o = v; el.setAttribute(name, out); return; }
     }
     attrRecs.push({ el: el, a: name, o: v });
     el.setAttribute(name, out);
+  }
+
+  function applyValue(el) {
+    if (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA') return;
+    var type = (el.type || 'text').toLowerCase();
+    if (['button', 'submit', 'reset', 'checkbox', 'radio', 'range', 'color', 'file'].indexOf(type) >= 0) return;
+    var v = el.value;
+    if (!v || !KO.test(v)) return;
+    var key = norm(v);
+    if (!Object.prototype.hasOwnProperty.call(DICT, key)) return;
+    for (var i = 0; i < valRecs.length; i++) if (valRecs[i].el === el) return;
+    var out = DICT[key];
+    valRecs.push({ el: el, o: v });
+    el.value = out;
+    try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
   }
 
   function walk(root) {
@@ -887,6 +918,7 @@ window.__ONETAP_I18N_RULES__ = [["유튜브", "YouTube"], ["틱톡", "TikTok"], 
       var el = list[k];
       if (el.closest && el.closest('[data-i18n-skip]')) continue;
       for (var j = 0; j < ATTRS.length; j++) applyAttr(el, ATTRS[j]);
+      applyValue(el);
       if (el.tagName === 'INPUT' && /^(submit|button|reset)$/i.test(el.type || '')) {
         var v = el.value;
         if (v && KO.test(v)) { var o = translate(v); if (o) el.value = o; }
@@ -922,6 +954,8 @@ window.__ONETAP_I18N_RULES__ = [["유튜브", "YouTube"], ["틱톡", "TikTok"], 
         if (a.el && a.el.isConnected) a.el.setAttribute(a.a, a.o);
       }
       attrRecs = [];
+      for (var k = 0; k < valRecs.length; k++) { if (valRecs[k].el && valRecs[k].el.isConnected) valRecs[k].el.value = valRecs[k].o; }
+      valRecs = [];
       if (titleRec.ko) document.title = titleRec.ko;
     } catch (e) {}
     applying = false;
@@ -958,8 +992,9 @@ window.__ONETAP_I18N_RULES__ = [["유튜브", "YouTube"], ["틱톡", "TikTok"], 
 
   function mountToggle() {
     if (document.getElementById('onetapLangToggle')) return;
-    var host = document.querySelector('.topbar-inner') || document.querySelector('.top-actions') ||
-      document.querySelector('.topbar') || document.querySelector('header') || document.body;
+    var host = document.querySelector('.topbar-inner') || document.querySelector('.bar-in') ||
+      document.querySelector('.top-actions') || document.querySelector('.topbar') ||
+      document.querySelector('header') || document.body;
     var btn = document.createElement('button');
     btn.id = 'onetapLangToggle';
     btn.type = 'button';
@@ -981,7 +1016,7 @@ window.__ONETAP_I18N_RULES__ = [["유튜브", "YouTube"], ["틱톡", "TikTok"], 
       '.onetap-lang-toggle{flex:0 0 auto;display:inline-flex;align-items:center;gap:3px;height:32px;padding:0 9px;' +
       'border:1px solid rgba(120,120,130,.42);border-radius:999px;background:transparent;color:inherit;' +
       'font:600 11px/1 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;letter-spacing:.02em;' +
-      'cursor:pointer;opacity:.92;margin-left:6px;white-space:nowrap;vertical-align:middle}' +
+      'cursor:pointer;opacity:.92;margin-left:auto;white-space:nowrap;vertical-align:middle}' +
       '.onetap-lang-toggle:hover{opacity:1;border-color:rgba(120,120,130,.7)}' +
       '.onetap-lang-toggle .otl-sep{opacity:.35;font-weight:400}' +
       '.onetap-lang-toggle .otl-ko,.onetap-lang-toggle .otl-en{opacity:.45}' +
