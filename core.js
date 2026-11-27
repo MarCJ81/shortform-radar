@@ -239,6 +239,7 @@
         item.category || '',
         item.product ? item.product.name : '',
         item.channelTitle || '',
+        (item.searchTerms || []).join(' '),
       ].join(' ').toLowerCase();
     }
     return item._hay;

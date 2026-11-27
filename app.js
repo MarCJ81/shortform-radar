@@ -63,6 +63,11 @@
     tab: 'radar',
     watchOnlyOutliers: false,
     now: Date.now(),
+    /* 검색창에서 Enter 한 번으로 실행되는 실시간 검색 상태 */
+    live: { busy: false, query: '', message: '', error: '', canWiden: false },
+    lastLive: null,                 // { query, at } — 같은 말을 연타해 할당량을 태우지 않게
+    lastYt: { region: 'KR', period: 7, max: 25 },
+    pendingSearch: '',              // API 키가 없을 때 저장 후 이어갈 검색어
   };
 
   window.__radar = { state, C, refresh: () => renderAll() };
@@ -544,8 +549,8 @@
       html = '<span aria-hidden="true">📡</span><span class="note-line"><b>' +
         (state.filters.collectedOnly ? '데모 ' + state.demo.length + '건 숨김' : '데모 ' + state.demo.length + '건') +
         '</b> · 수치는 시뮬레이션</span>' +
-        '<span class="dot-sep">|</span><span class="note-sub">API 키를 넣으면 실제 쇼츠를 실시간 수집합니다</span>' +
-        '<button class="link" data-action="open-settings">API 연결</button>';
+        '<span class="dot-sep">|</span><span class="note-sub">검색창에 키워드를 넣고 <b>Enter</b>를 누르면 YouTube에서 바로 모아옵니다 (무료 API 키 필요)</span>' +
+        '<button class="link" data-action="open-settings">키 넣고 바로 검색</button>';
     }
     if (urlItems || csvItems) {
       html += '<span class="dot-sep">|</span><span class="note-line">내가 추가 ' + (urlItems + csvItems) + '건</span>';
@@ -557,11 +562,21 @@
     const items = C.visibleItems(allItems(), state, state.now);
     $('#grid').innerHTML = items.map((i) => cardHTML(i)).join('');    const empty = items.length === 0;
     if (empty) {
-      const hint = $('#empty .muted');
+      const hint = $('#emptyHint');
+      const liveBtn = $('#emptyLiveBtn');
+      const q = (state.query || '').trim();
       if (hint) {
-        hint.textContent = state.filters.collectedOnly && !state.userItems.length
-          ? '데모 ' + state.demo.length + '건은 숨겨져 있습니다. YouTube API나 링크·CSV로 영상을 먼저 모으면 여기에 쌓입니다.'
-          : '필터를 풀거나 새 키워드로 검색해 보세요.';
+        hint.textContent = q
+          ? (state.apiKey
+            ? '"' + q + '"에 해당하는 카드가 아직 없습니다. Enter를 누르면 YouTube에서 지금 바로 꺼내옵니다.'
+            : '"' + q + '"에 해당하는 카드가 없습니다. 무료 YouTube API 키를 넣으면 검색창에서 바로 실시간 검색됩니다.')
+          : (state.filters.collectedOnly && !state.userItems.length
+            ? '데모 ' + state.demo.length + '건은 숨겨져 있습니다. 검색창에 키워드를 넣고 Enter를 누르면 YouTube에서 바로 모아옵니다.'
+            : '필터를 풀거나, 위 검색창에 키워드를 넣고 Enter를 누르면 YouTube에서 바로 찾아옵니다.');
+      }
+      if (liveBtn) {
+        liveBtn.hidden = !q;
+        liveBtn.textContent = state.apiKey ? 'YouTube에서 바로 검색' : 'API 키 넣고 바로 검색';
       }
     }
     $('#empty').hidden = !empty;
@@ -1341,11 +1356,14 @@
   }
 
   /* ---------- settings ---------- */
-  function openSettings() {
+  function openSettings(mode) {
     const qty = state.quota && state.quota.date === C.quotaDateKey(state.now) ? state.quota : { search: 0, units: 0 };
     const pct = Math.min(100, Math.round((qty.search / C.QUOTA.searchPerDay) * 100));
+    const pending = mode === 'search' && state.pendingSearch
+      ? '<p class="form-ok" style="margin:0 0 10px">‘' + esc(state.pendingSearch) + '’ 검색어를 기다리고 있습니다. 키를 저장하면 이어서 바로 검색합니다.</p>'
+      : '';
     const body = modalHead('설정', 'API 키와 저장 데이터') + '<div class="modal-body">' +
-      '<div class="sec-title" style="margin-top:0">YouTube Data API v3 (무료)<span class="line"></span></div>' +
+      '<div class="sec-title" style="margin-top:0">YouTube Data API v3 (무료)<span class="line"></span></div>' + pending +
       '<p class="form-note">키를 넣으면 실제 쇼츠를 검색해 채널 평균 대비 배수·VPH·점수를 실시간으로 계산합니다. 키는 <b>이 브라우저의 localStorage</b>에만 저장되고, 요청은 Google API로만 나갑니다.</p>' +
       '<label class="flabel" for="apiKeyInput">API 키</label>' +
       '<div class="form-row"><input class="input" id="apiKeyInput" type="password" placeholder="AIza…" value="' + esc(state.apiKey) + '" autocomplete="off" spellcheck="false" />' +
@@ -1379,8 +1397,9 @@
 
   /* ---------- collect ---------- */
   function openCollect(mode) {
-    const m = mode || 'link';
-    const body = modalHead('숏폼 수집', '검색 · 링크 · CSV') + '<div class="modal-body">' +
+    const m = mode || (state.apiKey ? 'yt' : 'link');
+    const body = modalHead('숏폼 수집', '검색창 검색 · 링크 · CSV') + '<div class="modal-body">' +
+      '<p class="form-ok" style="margin:0 0 12px">YouTube 실시간 검색은 위 <b>검색창에 키워드를 넣고 Enter</b>를 누르면 바로 됩니다. 여기는 링크·CSV로 직접 넣을 때 씁니다.</p>' +
       '<div class="seg" id="collectSeg">' +
       '<button data-mode="yt" class="' + (m === 'yt' ? 'is-on' : '') + '">YouTube 실시간</button>' +
       '<button data-mode="link" class="' + (m === 'link' ? 'is-on' : '') + '">링크 붙여넣기</button>' +
@@ -1398,13 +1417,14 @@
       const qty = state.quota && state.quota.date === C.quotaDateKey(state.now) ? state.quota : { search: 0, units: 0 };
       return '<form id="ytForm">' +
         '<label class="flabel" for="ytQuery">키워드</label>' +
-        '<input class="input" id="ytQuery" placeholder="예: 자취 요리, 다이어트, AI 툴" value="자취 요리" />' +
+        '<input class="input" id="ytQuery" placeholder="예: 자취 요리, 다이어트, AI 툴" value="' +
+          esc(state.query || (state.lastLive && state.lastLive.query) || '자취 요리') + '" />' +
         '<div class="form-row" style="margin-top:10px">' +
         '<div><label class="flabel" for="ytRegion">국가</label><select class="input" id="ytRegion"><option value="KR">한국 (KR)</option><option value="GL">글로벌 (GL)</option></select></div>' +
         '<div><label class="flabel" for="ytPeriod">기간</label><select class="input" id="ytPeriod"><option value="1">24시간</option><option value="7" selected>7일</option><option value="30">30일</option></select></div>' +
         '<div><label class="flabel" for="ytMax">개수</label><select class="input" id="ytMax"><option value="10">10건</option><option value="25" selected>25건</option><option value="50">50건</option></select></div>' +
         '</div>' +
-        '<p class="form-note">최신순·조회수순 쇼츠를 검색한 뒤, 채널 평균과 비교해 배수를 계산합니다. 호출은 검색 1회 + 상세 2회입니다. 오늘 검색 ' + qty.search + '/' + C.QUOTA.searchPerDay + '회 사용.</p>' +
+        '<p class="form-note">최신순·조회수순 쇼츠를 검색한 뒤, 채널 평균과 비교해 배수를 계산합니다. 호출은 검색 1회 + 상세 2회입니다. 오늘 검색 ' + qty.search + '/' + C.QUOTA.searchPerDay + '회 사용. 검색창에서 Enter를 눌러도 같은 수집이 실행됩니다.</p>' +
         '<div id="ytError" class="form-note" style="color:var(--danger);margin-top:8px" role="alert"></div>' +
         '<div class="form-row" style="margin-top:12px"><button class="btn btn-primary" type="submit" style="flex:0 0 auto">실시간 수집</button>' +
         '<button class="btn btn-ghost" type="button" data-action="close-modal" style="flex:0 0 auto">닫기</button></div>' +
@@ -1657,6 +1677,9 @@
     });
 
     const items = (vids.items || []).map((v) => ytItemFromVideo(v, channels, channelViews, region));
+    /* 이 검색어로 모았다는 표시 — 제목에 키워드가 없어도 검색어로 다시 찾을 수 있게 */
+    const tag = String(opts.query || '').trim();
+    if (tag) items.forEach((it) => { it.searchTerms = [tag]; });
     return { added: mergeItems(items), items };
   }
 
@@ -1665,7 +1688,14 @@
     newItems.forEach((item) => {
       const i = state.userItems.findIndex((x) => x.id === item.id);
       if (i === -1) { state.userItems.unshift(item); added++; }
-      else state.userItems[i] = Object.assign({}, state.userItems[i], item);
+      else {
+        const prev = state.userItems[i];
+        const merged = Object.assign({}, prev, item);
+        const terms = (prev.searchTerms || []).concat(item.searchTerms || []);
+        if (terms.length) merged.searchTerms = terms.filter((t, k) => terms.indexOf(t) === k);
+        delete merged._hay;   // 검색어 태그가 바뀌었으면 캐시된 검색 문자열을 버린다
+        state.userItems[i] = merged;
+      }
     });
     persistItems();
     return added;
@@ -1679,8 +1709,143 @@
     return ' · 실시간 수집만 보기로 전환(데모 숨김)';
   }
 
-  async function fetchYoutubeById(videoId) {
-    const key = state.apiKey;
+  /* ── 검색창에서 Enter 한 번으로 실시간 검색 ────────────────────
+     예전엔 검색창이 이미 모은 카드만 걸러내서, 실제 YouTube 검색은 '+ 수집' 모달에
+     들어가 '실시간 수집'을 또 눌러야 했다. 이제 검색창에서 Enter(또는 돋보기)를 누르면
+     바로 search.list → videos → channels를 돌려 결과를 이 화면에 쌓고,
+     같은 검색어로 그 결과를 보여준다. */
+  const LIVE_REUSE_MS = 3 * 60 * 1000;
+
+  function updateSearchHint() {
+    const kbd = $('#searchKbd');
+    if (!kbd) return;
+    const q = String(state.query || '').trim();
+    kbd.hidden = !(state.apiKey && q.length > 0 && !state.live.busy);
+  }
+
+  function renderLiveBar() {
+    const bar = $('#liveBar');
+    if (!bar) return;
+    const l = state.live;
+    const show = l.busy || !!l.message || !!l.error;
+    bar.hidden = !show;
+    bar.classList.toggle('is-error', !l.busy && !!l.error);
+    if (!show) { bar.innerHTML = ''; return; }
+    let html = '';
+    if (l.busy) {
+      html = '<span class="spin" aria-hidden="true"></span><span class="lb-text"><b>‘' + esc(l.query) +
+        '’</b> YouTube 실시간 검색 중… 채널 평균 대비 배수를 계산하고 있습니다.</span>';
+    } else if (l.error) {
+      html = '<span class="lb-ico" aria-hidden="true">⚠</span><span class="lb-text"><b>실시간 검색 실패</b> · ' + esc(l.error) + '</span>' +
+        '<span class="lb-actions"><button class="btn btn-ghost" data-action="live-search" data-force="1">다시 시도</button>' +
+        '<button class="btn btn-ghost" data-action="open-settings">키 관리</button></span>';
+    } else {
+      html = '<span class="lb-ico" aria-hidden="true">✓</span><span class="lb-text">' + l.message + '</span>' +
+        '<span class="lb-actions">' +
+        (l.canWiden ? '<button class="btn btn-primary" data-action="live-widen">30일로 넓혀 다시 검색</button>' : '') +
+        '<button class="btn btn-ghost" data-action="live-search" data-force="1">다시 수집</button></span>';
+    }
+    html += '<button type="button" class="lb-close" data-action="dismiss-live" aria-label="안내 닫기">✕</button>';
+    bar.innerHTML = html;
+  }
+
+  function setLive(patch) {
+    Object.assign(state.live, patch);
+    renderLiveBar();
+    updateSearchHint();
+  }
+
+  function applyQueryFilter(q) {
+    state.query = q;
+    const input = $('#searchInput');
+    if (input && input.value !== q) input.value = q;
+    const clear = $('.search-clear');
+    if (clear) clear.hidden = !q;
+    updateSearchHint();
+    renderGrid();
+    renderSummary();
+    renderSourceNote();
+  }
+
+  function clearQueryFilter() {
+    state.query = '';
+    const input = $('#searchInput');
+    if (input) input.value = '';
+    const clear = $('.search-clear');
+    if (clear) clear.hidden = true;
+    updateSearchHint();
+  }
+
+  function widenFiltersForResults() {
+    /* 필터 때문에 방금 모은 결과가 하나도 안 보이면, 결과가 보이도록 필터를 풀어준다 */
+    state.filters = { platform: 'all', country: 'all', minMultiple: 0, period: 0, category: 'all', collectedOnly: true };
+    renderChips();
+  }
+
+  async function liveSearch(rawQuery, opts) {
+    const o = opts || {};
+    const q = String(rawQuery === undefined ? state.query : rawQuery).trim();
+    if (!q) {
+      toast('검색할 키워드를 먼저 입력해 주세요.', 'warn');
+      const input = $('#searchInput');
+      if (input) input.focus();
+      return;
+    }
+    if (state.live.busy) return;
+    if (o.period) state.lastYt.period = o.period;
+
+    /* 키가 없으면 설정으로 이동하고, 키를 저장하면 이어서 검색한다 */
+    if (!state.apiKey) {
+      state.pendingSearch = q;
+      applyQueryFilter(q);
+      setLive({ busy: false, query: q, error: '', canWiden: false,
+        message: '‘' + esc(q) + '’를 바로 검색하려면 무료 YouTube API 키가 필요합니다. 키를 저장하면 이어서 자동으로 검색합니다.' });
+      openSettings('search');
+      return;
+    }
+
+    /* 같은 검색어를 연달아 누르면 이미 모은 결과를 보여주고 할당량을 아낀다 */
+    if (!o.force && state.lastLive && state.lastLive.at > Date.now() - LIVE_REUSE_MS &&
+        state.lastLive.query.toLowerCase() === q.toLowerCase()) {
+      applyQueryFilter(q);
+      setLive({ busy: false, query: q, error: '', canWiden: false,
+        message: '‘' + esc(q) + '’ 결과를 이미 모았습니다. 새로 모으려면 오른쪽 <b>다시 수집</b>을 누르세요.' });
+      return;
+    }
+
+    setTab('radar');
+    applyQueryFilter(q);
+    setLive({ busy: true, query: q, message: '', error: '', canWiden: false });
+    const region = state.lastYt.region;
+    const period = Number(state.lastYt.period) || 7;
+    const max = Number(state.lastYt.max) || 25;
+    try {
+      const res = await runYouTubeSearch({ query: q, region, period, max });
+      state.lastLive = { query: q, at: Date.now() };
+      const n = (res.items || []).length;
+      state.filters.collectedOnly = n ? true : state.filters.collectedOnly;
+      renderAll();
+      let visible = C.visibleItems(allItems(), state, state.now);
+      let widened = false;
+      if (n && !visible.length) {
+        widenFiltersForResults();
+        renderAll();
+        visible = C.visibleItems(allItems(), state, state.now);
+        widened = true;
+      }
+      let msg = '<b>‘' + esc(q) + '’</b> ' + (period === 1 ? '24시간' : period + '일') + ' 기준 검색 결과 <b>' + n + '건</b>' +
+        (res.added ? ' · 새로 ' + res.added + '건 담음' : ' · 이미 담은 영상') +
+        (widened ? ' · 카테고리·배수 필터를 초기화했습니다' : '');
+      setLive({ busy: false, query: q, error: '', message: msg, canWiden: n === 0 });
+      if (n === 0) toast('‘' + q + '’ 결과가 없습니다. 30일로 넓혀 다시 찾아보세요.', 'warn');
+      else toast('‘' + q + '’ ' + n + '건을 모았습니다.' + (res.added ? '' : ' (이미 담긴 영상)') + (state.filters.collectedOnly ? '' : ''));
+    } catch (ex) {
+      setLive({ busy: false, query: q, error: ex.message || '실시간 검색에 실패했습니다.', message: '', canWiden: false });
+      toast('실시간 검색 실패', 'warn');
+    }
+  }
+
+  async function fetchYoutubeById(videoId) {    const key = state.apiKey;
     if (!key) return null;
     const vids = await apiGet('videos', { part: 'snippet,statistics,contentDetails', id: videoId, key });
     bumpQuota(0, 1);
@@ -1756,6 +1921,7 @@
       }
     }
     const switched = focusCollected(added);
+    clearQueryFilter();   // 링크·CSV로 넣은 카드가 검색어 필터에 가려지지 않게
     renderAll();
     setTab('radar');
     if (added) toast('카드 ' + added + '건 추가' + (pendingCount ? ' · 지표 미입력 ' + pendingCount + '건' : '') + (failed ? ' · 실패 ' + failed : '') + switched);
@@ -1804,9 +1970,9 @@
         break;
       }
       case 'clear-search': {
-        state.query = '';
-        $('#searchInput').value = '';
-        $('#searchInput').dispatchEvent(new Event('input', { bubbles: true }));
+        clearQueryFilter();
+        renderGrid();
+        renderSummary();
         break;
       }
       case 'toggle-theme': {
@@ -1815,7 +1981,14 @@
         break;
       }
       case 'open-settings': openSettings(); break;
-      case 'open-collect': openCollect('link'); break;
+      case 'open-collect': openCollect(); break;
+      case 'live-search': liveSearch(state.query, { force: el.dataset.force === '1' }); break;
+      case 'live-widen': liveSearch(state.live.query, { force: true, period: 30 }); break;
+      case 'dismiss-live':
+        state.live = { busy: false, query: '', message: '', error: '', canWiden: false };
+        renderLiveBar();
+        updateSearchHint();
+        break;
       case 'close-modal': closeModal(); break;
       case 'toggle-collected-only': {
         state.filters.collectedOnly = !state.filters.collectedOnly;
@@ -1847,7 +2020,14 @@
         store.set(KEY.apiKey, key);
         renderAll();
         toast('API 키를 이 브라우저에만 저장했습니다.');
-        openSettings();
+        if (state.pendingSearch) {
+          const q = state.pendingSearch;
+          state.pendingSearch = '';
+          closeModal();
+          liveSearch(q, { force: true });
+        } else {
+          openSettings();
+        }
         break;
       }
       case 'delete-key': {
@@ -2073,6 +2253,12 @@
     if (btn) btn.setAttribute('aria-label', state.theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환');
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute('content', state.theme === 'dark' ? '#080a0f' : '#ffffff');
+    /* 그래프(캔버스)의 축·글자색은 CSS 변수를 그릴 때 읽으므로 테마를 바꾸면 다시 그린다.
+       안 그러면 다크에서 축 라벨이 검은 글씨로 남아 보이지 않는다. */
+    const dist = $('#distPanel');
+    if (dist && !dist.hidden) {
+      try { renderDistribution(C.visibleItems(allItems(), state, state.now)); } catch (e) {}
+    }
   }
 
   function setTab(tab) {
@@ -2106,6 +2292,7 @@
     renderBoard();
     renderAI();
     updateTabBadge();
+    updateSearchHint();
     const dot = $('#apiDot');
     if (dot) dot.classList.toggle('on', !!state.apiKey);
     const lbl = $('#apiButtonLabel');
@@ -2141,6 +2328,15 @@
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !$('#modalRoot').hidden) { closeModal(); return; }
+    if (e.key === 'Escape' && document.activeElement && document.activeElement.id === 'searchInput' && state.query) {
+      state.query = '';
+      document.activeElement.value = '';
+      $('.search-clear').hidden = true;
+      updateSearchHint();
+      renderGrid();
+      renderSummary();
+      return;
+    }
     if ((e.key === 'Enter' || e.key === ' ') && document.activeElement && document.activeElement.dataset.action === 'open-detail') {
       e.preventDefault();
       openDetail(document.activeElement.dataset.id);
@@ -2173,6 +2369,7 @@
     if (t.id === 'searchInput') {
       state.query = t.value;
       $('.search-clear').hidden = !t.value;
+      updateSearchHint();
       renderGrid();
       renderSummary();
     }
@@ -2181,6 +2378,7 @@
   document.addEventListener('input', (e) => {
     if (e.target.id === 'searchInput') {
       $('.search-clear').hidden = !e.target.value;
+      updateSearchHint();
     }
     if (e.target.id === 'studioProduct') updateStudioScript();
     if (e.target.hasAttribute && e.target.hasAttribute('data-psy')) {
@@ -2214,6 +2412,12 @@
 
   document.addEventListener('submit', async (e) => {
     const f = e.target;
+    if (f.id === 'searchForm') {
+      e.preventDefault();
+      const input = $('#searchInput');
+      liveSearch(input ? input.value : state.query, { force: false });
+      return;
+    }
     if (f.id === 'ytForm') {
       e.preventDefault();
       const btn = f.querySelector('button[type="submit"]');
@@ -2223,17 +2427,22 @@
       const old = btn.textContent;
       btn.textContent = '수집 중…';
       try {
-        const res = await runYouTubeSearch({
-          query: $('#ytQuery').value.trim() || '쇼츠',
-          region: $('#ytRegion').value,
-          period: $('#ytPeriod').value,
-          max: $('#ytMax').value,
-        });
+        const q = $('#ytQuery').value.trim() || '쇼츠';
+        const region = $('#ytRegion').value;
+        const period = $('#ytPeriod').value;
+        const max = $('#ytMax').value;
+        state.lastYt = { region, period: Number(period) || 7, max: Number(max) || 25 };
+        const res = await runYouTubeSearch({ query: q, region, period, max });
         closeModal();
         setTab('radar');
+        state.lastLive = { query: q, at: Date.now() };
+        state.filters.collectedOnly = res.items.length ? true : state.filters.collectedOnly;
         const switched = focusCollected(res.added);
+        clearQueryFilter();   // 검색창에서 시킨 게 아니므로 방금 담은 카드가 다 보이게
         renderAll();
-        toast(res.added ? '실시간 영상 ' + res.added + '건을 추가했습니다.' + switched : '새 영상이 없습니다 (이미 수집됨).');
+        setLive({ busy: false, query: q, error: '', canWiden: res.items.length === 0,
+          message: '<b>‘' + esc(q) + '’</b> 검색 결과 <b>' + res.items.length + '건</b>' + (res.added ? ' · 새로 ' + res.added + '건 담음' : ' · 이미 담은 영상') });
+        toast(res.added ? '실시간 영상 ' + res.added + '건을 추가했습니다.' + switched : (res.items.length ? '이미 담은 영상입니다.' : '새 영상이 없습니다.'));
       } catch (ex) {
         err.textContent = ex.message || '수집에 실패했습니다.';
         toast('수집 실패', 'warn');
@@ -2263,6 +2472,7 @@
       }
       const added = mergeItems(res.items);
       const switched = focusCollected(added);
+      clearQueryFilter();   // CSV로 넣은 카드가 검색어 필터에 가려지지 않게
       closeModal();
       renderAll();
       setTab('radar');
